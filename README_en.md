@@ -60,7 +60,7 @@ Download and install the macOS version from https://ollama.com/download.
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourname/ja-dubbing.git
+git clone https://github.com/Shuichi346/ja-dubbing.git
 cd ja-dubbing
 ```
 
