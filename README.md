@@ -69,7 +69,7 @@ https://ollama.com/download から macOS 版をダウンロードしてインス
 ### 1. リポジトリの取得
 
 ```bash
-git clone https://github.com/yourname/ja-dubbing.git
+git clone https://github.com/Shuichi346/ja-dubbing.git
 cd ja-dubbing
 ```
 
