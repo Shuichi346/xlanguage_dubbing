@@ -34,7 +34,7 @@ class ProgressStore:
             "video": video_signature(video_path),
             "steps": {
                 "probe_done": False,
-                "whisper_done": False,
+                "asr_done": False,
                 "diarization_done": False,
                 "translate_done": False,
                 "tts": {"done_count": 0, "total": 0},

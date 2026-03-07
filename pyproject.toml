@@ -1,6 +1,6 @@
 [project]
 name = "ja-dubbing"
-version = "3.1.0"
+version = "4.0.0"
 description = "英語動画を話者音声クローン付き日本語吹き替え動画に変換"
 requires-python = ">=3.13"
 dependencies = [
@@ -14,7 +14,6 @@ dependencies = [
     "pyannote-audio>=3.1.0",
     "plamo-translate>=1.0.0",
     "sentencepiece>=0.2.1",
-    "pywhispercpp>=1.0.0",
     "mlx-audio[stt]>=0.3.0",
 ]
 

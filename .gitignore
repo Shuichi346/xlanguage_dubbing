@@ -10,3 +10,4 @@ build/
 .venv/
 MioTTS-Inference/
 start_servers.sh
+whisper.cpp/

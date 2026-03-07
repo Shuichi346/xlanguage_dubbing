@@ -66,19 +66,38 @@ KEEP_TEMP = _env_bool("KEEP_TEMP", True)
 ASR_ENGINE = _env("ASR_ENGINE", "whisper")  # "whisper" or "vibevoice"
 
 # =========================
-# pywhispercpp
+# whisper.cpp（CLIバイナリ + VAD）
 # =========================
 
 WHISPER_MODEL = _env("WHISPER_MODEL", "large-v3-turbo")
 WHISPER_LANG = _env("WHISPER_LANG", "en")
+VAD_MODEL = _env("VAD_MODEL", "silero-v6.2.0")
+
+# whisper.cpp のインストール先（setup_whisper.sh がクローンする場所）
+WHISPER_CPP_DIR = Path(_env("WHISPER_CPP_DIR", "./whisper.cpp"))
 
 # =========================
 # VibeVoice-ASR
 # =========================
 
 VIBEVOICE_MODEL = _env("VIBEVOICE_MODEL", "mlx-community/VibeVoice-ASR-8bit")
-VIBEVOICE_MAX_TOKENS = _env_int("VIBEVOICE_MAX_TOKENS", 65536)
+VIBEVOICE_MAX_TOKENS = _env_int("VIBEVOICE_MAX_TOKENS", 32768)
 VIBEVOICE_CONTEXT = _env("VIBEVOICE_CONTEXT", "")
+
+# VibeVoice エンコーダチャンク設定（メモリ最適化）
+VIBEVOICE_CHUNK_REFERENCE_AVAILABLE_GB = _env_float(
+    "VIBEVOICE_CHUNK_REFERENCE_AVAILABLE_GB", 14.0
+)
+VIBEVOICE_CHUNK_REFERENCE_SECONDS = _env_int(
+    "VIBEVOICE_CHUNK_REFERENCE_SECONDS", 600
+)
+VIBEVOICE_CHUNK_SAFETY_MARGIN = _env_float(
+    "VIBEVOICE_CHUNK_SAFETY_MARGIN", 0.80
+)
+VIBEVOICE_CHUNK_MIN_SECONDS = _env_int("VIBEVOICE_CHUNK_MIN_SECONDS", 120)
+VIBEVOICE_CHUNK_MAX_SECONDS = _env_int("VIBEVOICE_CHUNK_MAX_SECONDS", 1800)
+VIBEVOICE_PREFILL_STEP_SIZE = _env_int("VIBEVOICE_PREFILL_STEP_SIZE", 512)
+VIBEVOICE_MEMORY_LIMIT_RATIO = _env_float("VIBEVOICE_MEMORY_LIMIT_RATIO", 0.90)
 
 # =========================
 # pyannote.audio
@@ -101,14 +120,14 @@ PLAMO_TRANSLATE_RETRY_BACKOFF_SEC = _env_float("PLAMO_TRANSLATE_RETRY_BACKOFF_SE
 
 MIOTTS_API_URL = _env("MIOTTS_API_URL", "http://localhost:8001")
 MIOTTS_HTTP_TIMEOUT = _env_float("MIOTTS_HTTP_TIMEOUT", 600.0)
-MIOTTS_REFERENCE_MAX_SEC = _env_float("MIOTTS_REFERENCE_MAX_SEC", 15.0)
+MIOTTS_REFERENCE_MAX_SEC = _env_float("MIOTTS_REFERENCE_MAX_SEC", 20.0)
 MIOTTS_MAX_TEXT_LENGTH = _env_int("MIOTTS_MAX_TEXT_LENGTH", 500)
 MIOTTS_TTS_RETRIES = _env_int("MIOTTS_TTS_RETRIES", 2)
 
 # MioTTS LLMバックエンド
 MIOTTS_LLM_PORT = _env_int("MIOTTS_LLM_PORT", 8000)
 MIOTTS_LLM_MODEL = _env(
-    "MIOTTS_LLM_MODEL", "hf.co/Aratako/MioTTS-GGUF:MioTTS-1.2B-BF16.gguf"
+    "MIOTTS_LLM_MODEL", "hf.co/Aratako/MioTTS-GGUF:MioTTS-1.7B-Q8_0.gguf"
 )
 MIOTTS_DEVICE = _env("MIOTTS_DEVICE", "mps")
 MIOTTS_CODEC_MODEL = _env("MIOTTS_CODEC_MODEL", "Aratako/MioCodec-25Hz-44.1kHz-v2")

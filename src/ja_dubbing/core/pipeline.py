@@ -124,7 +124,7 @@ def process_one_video(
         print_step("1. 既存の音声抽出 wav を利用")
 
     # ===== 2-5. 文字起こし〜セグメント加工 =====
-    if progress.step("whisper_done") and seg_json_en.exists():
+    if progress.step("asr_done") and seg_json_en.exists():
         print_step("2-5. ASR+話者分離: 既に完了（segments_en.json から再開）")
         segments_en = load_segments_json(seg_json_en)
 
@@ -148,7 +148,7 @@ def process_one_video(
             release_vibevoice_model()
 
             save_srt_atomic(segments_raw, srt_en_path)
-            progress.set_artifact("whisper_srt_en", str(srt_en_path))
+            progress.set_artifact("asr_srt_en", str(srt_en_path))
             progress.save()
 
             print_step("3. 話者分離: VibeVoice-ASR 内蔵のため省略")
@@ -166,7 +166,7 @@ def process_one_video(
                 run_diarization,
             )
 
-            print_step("2. pywhispercpp で文字起こし")
+            print_step("2. whisper.cpp CLIで文字起こし")
             segments_raw = whisper_transcribe(wav_whisper)
             if not segments_raw:
                 raise PipelineError("Whisper セグメントが空です。")
@@ -175,7 +175,7 @@ def process_one_video(
             release_whisper_model()
 
             save_srt_atomic(segments_raw, srt_en_path)
-            progress.set_artifact("whisper_srt_en", str(srt_en_path))
+            progress.set_artifact("asr_srt_en", str(srt_en_path))
             progress.save()
 
             # 3. 話者分離
@@ -224,7 +224,7 @@ def process_one_video(
 
         save_segments_json_atomic(segments_en, seg_json_en)
         progress.set_artifact("segments_en_json", str(seg_json_en))
-        progress.set_step("whisper_done", True)
+        progress.set_step("asr_done", True)
         progress.save()
 
     if not segments_en:
