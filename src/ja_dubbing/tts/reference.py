@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import base64
+import gc
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
@@ -120,10 +121,16 @@ class SpeakerReferenceCache:
                 print_step(
                     f"  リファレンス生成: {speaker_id} ({total_sec:.1f}s)"
                 )
+                # pydub AudioSegment のメモリを解放する
+                del combined
             else:
                 print_step(
                     f"  警告: {speaker_id} のリファレンス音声を生成できません"
                 )
+
+            # 各話者の処理後にcollectedリストを明示的に解放する
+            del collected
+            gc.collect()
 
     def build_segment_references(
         self,
@@ -174,3 +181,9 @@ class SpeakerReferenceCache:
             wav_path = seg_ref_dir / f"seg_ref_{segno:05d}.wav"
             if wav_path.exists():
                 self._segment_refs[segno] = wav_path
+
+    def clear(self) -> None:
+        """キャッシュをクリアしてメモリを解放する。"""
+        self._refs.clear()
+        self._segment_refs.clear()
+        gc.collect()

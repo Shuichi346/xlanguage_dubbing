@@ -15,7 +15,13 @@ from ja_dubbing.segments.spacy_split import initialize_spacy
 from ja_dubbing.servers.health import generate_start_script, preflight_server_checks
 from ja_dubbing.translation.plamo import PlamoTranslateClient
 from ja_dubbing.tts.reference import SpeakerReferenceCache
-from ja_dubbing.utils import PipelineError, ensure_dir, print_step, which_or_raise
+from ja_dubbing.utils import (
+    PipelineError,
+    ensure_dir,
+    force_memory_cleanup,
+    print_step,
+    which_or_raise,
+)
 
 
 def preflight_checks() -> None:
@@ -69,6 +75,11 @@ def main() -> int:
             except Exception as exc:
                 print_step(f"エラー: {v}\n  {exc}")
                 failed.append(v)
+            finally:
+                # 動画間でメモリを強制解放する
+                del ref_cache
+                force_memory_cleanup()
+                print_step(f"[{idx}/{len(videos)}] メモリクリーンアップ完了")
 
         if failed:
             print_step(f"\n失敗: {len(failed)}/{len(videos)}")

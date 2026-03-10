@@ -9,6 +9,7 @@ plamo-translate-cli (MCP) による翻訳処理。
 from __future__ import annotations
 
 import asyncio
+import gc
 import re
 import time
 from collections import Counter
@@ -112,8 +113,28 @@ async def _translate_async(text: str) -> str:
         {"role": "user", "content": "output lang=Japanese\n"},
     ]
     result_parts: list[str] = []
-    async for chunk in client.translate(messages):
-        result_parts.append(chunk)
+    try:
+        async for chunk in client.translate(messages):
+            result_parts.append(chunk)
+    finally:
+        # MCPClient の非同期リソースを確実にクローズする
+        if hasattr(client, "close"):
+            try:
+                await client.close()
+            except Exception:
+                pass
+        elif hasattr(client, "aclose"):
+            try:
+                await client.aclose()
+            except Exception:
+                pass
+        elif hasattr(client, "__aexit__"):
+            try:
+                await client.__aexit__(None, None, None)
+            except Exception:
+                pass
+        del client
+
     return "".join(result_parts).strip()
 
 
@@ -154,6 +175,9 @@ class PlamoTranslateClient:
 
     def __init__(self) -> None:
         self._loop = _get_or_create_event_loop()
+        self._call_count = 0
+        # GCを実行する翻訳回数の間隔
+        self._gc_interval = 50
 
     def translate(
         self,
@@ -168,6 +192,10 @@ class PlamoTranslateClient:
                 result = self._loop.run_until_complete(
                     _translate_with_timeout(text)
                 )
+                self._call_count += 1
+                # 一定回数ごとにGCを実行してメモリ蓄積を防ぐ
+                if self._call_count % self._gc_interval == 0:
+                    gc.collect()
                 return result, "stop"
             except Exception as exc:
                 last_err = exc

@@ -61,6 +61,7 @@ from ja_dubbing.tts.reference import SpeakerReferenceCache
 from ja_dubbing.utils import (
     PipelineError,
     ensure_dir,
+    force_memory_cleanup,
     print_step,
     sanitize_text_for_tts,
 )
@@ -146,6 +147,7 @@ def process_one_video(
             print_step(f"   セグメント数: {len(segments_raw)}")
 
             release_vibevoice_model()
+            force_memory_cleanup()
 
             save_srt_atomic(segments_raw, srt_en_path)
             progress.set_artifact("asr_srt_en", str(srt_en_path))
@@ -191,7 +193,9 @@ def process_one_video(
             speaker_ids = set(s.speaker_id for s in segments_with_speaker)
             print_step(f"   話者数: {len(speaker_ids)}, ID: {sorted(speaker_ids)}")
 
+            # pyannote パイプラインとtorchメモリを解放
             release_pipeline()
+            force_memory_cleanup()
 
         # 5. セグメント加工（結合 → spaCy文分割 → 翻訳ユニット結合）
         print_step(
@@ -347,6 +351,9 @@ def process_one_video(
     progress.set_artifact("tts_meta_json", str(tts_meta_path))
     progress.save()
 
+    # TTS完了後にメモリクリーンアップ
+    force_memory_cleanup()
+
     # ===== 9. リタイム =====
     print_step("9. TTSに合わせて元動画の速度を区間ごとに変更（リタイム）")
 
@@ -482,6 +489,10 @@ def process_one_video(
     if not KEEP_TEMP:
         print_step(f"一時フォルダ削除: {work_dir}")
         shutil.rmtree(work_dir, ignore_errors=True)
+
+    # 動画1本の処理完了後にメモリを解放する
+    force_memory_cleanup()
+    print_step("メモリクリーンアップ実行済み")
 
 
 def _reload_cached_references(

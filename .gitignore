@@ -11,3 +11,4 @@ build/
 MioTTS-Inference/
 start_servers.sh
 whisper.cpp/
+uv.lock

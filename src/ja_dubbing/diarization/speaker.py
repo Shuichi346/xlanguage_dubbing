@@ -8,6 +8,7 @@ pyannote.audio 4.x の DiarizeOutput API に対応。
 
 from __future__ import annotations
 
+import gc
 from pathlib import Path
 from typing import List
 
@@ -83,6 +84,10 @@ def run_diarization(wav_path: Path) -> List[DiarizationSegment]:
 
     raw_output = pipeline({"waveform": waveform, "sample_rate": sample_rate})
 
+    # waveform テンソルを即座に解放する
+    del waveform
+    gc.collect()
+
     # 4.x / 3.x 両対応で Annotation を取得
     annotation = _extract_annotation(raw_output)
 
@@ -94,6 +99,10 @@ def run_diarization(wav_path: Path) -> List[DiarizationSegment]:
             speaker=str(speaker),
         ))
 
+    # raw_output（内部テンソル含む）を解放する
+    del raw_output, annotation
+    gc.collect()
+
     print_step(
         f"  話者分離完了: {len(results)} 区間, "
         f"話者数={len(set(r.speaker for r in results))}"
@@ -102,6 +111,22 @@ def run_diarization(wav_path: Path) -> List[DiarizationSegment]:
 
 
 def release_pipeline() -> None:
-    """メモリ節約のためパイプラインを解放する。"""
+    """メモリ節約のためパイプラインとtorchキャッシュを解放する。"""
     global _PIPELINE
-    _PIPELINE = None
+
+    if _PIPELINE is not None:
+        del _PIPELINE
+        _PIPELINE = None
+
+    gc.collect()
+
+    # PyTorch MPS メモリキャッシュを明示的に解放する
+    try:
+        import torch
+        if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+            torch.mps.empty_cache()
+    except ImportError:
+        pass
+
+    gc.collect()
+    print_step("  pyannote パイプラインと torch MPS キャッシュを解放しました")

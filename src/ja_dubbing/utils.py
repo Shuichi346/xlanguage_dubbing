@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import gc
 import json
 import re
 import shutil
@@ -96,3 +97,23 @@ def sanitize_text_for_tts(text: str) -> str:
 def ffmpeg_concat_quote(path_str: str) -> str:
     """ffmpeg concat demuxer用にパスをクォートする。"""
     return path_str.replace("'", r"'\''")
+
+
+def force_memory_cleanup() -> None:
+    """Python GC と PyTorch MPS キャッシュを強制クリーンアップする。"""
+    gc.collect()
+
+    try:
+        import torch
+        if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+            torch.mps.empty_cache()
+    except ImportError:
+        pass
+
+    try:
+        import mlx.core as mx
+        mx.metal.clear_cache()
+    except (ImportError, AttributeError):
+        pass
+
+    gc.collect()
