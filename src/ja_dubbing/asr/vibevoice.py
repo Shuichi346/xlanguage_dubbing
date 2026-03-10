@@ -75,7 +75,7 @@ def _get_vibevoice_model():
     import mlx.core as mx
 
     # GPU 最大推奨サイズの指定割合をメモリ上限に設定（OS 分を確保）
-    device_info = mx.metal.device_info()
+    device_info = mx.device_info()
     max_recommended = device_info["max_recommended_working_set_size"]
     memory_limit = int(max_recommended * VIBEVOICE_MEMORY_LIMIT_RATIO)
     mx.metal.set_memory_limit(memory_limit)
@@ -111,7 +111,7 @@ def _get_available_memory_gb() -> float:
     """Metal GPU の空きメモリを GB 単位で返す。"""
     import mlx.core as mx
 
-    device_info = mx.metal.device_info()
+    device_info = mx.device_info()
     max_recommended = device_info["max_recommended_working_set_size"]
     active = mx.metal.get_active_memory()
     available = max_recommended - active
