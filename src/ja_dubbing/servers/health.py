@@ -4,6 +4,7 @@
 サーバーヘルスチェック・起動スクリプト生成。
 翻訳は CAT-Translate (llama-cpp-python) でプロセス内推論するためサーバー不要。
 MioTTS / GPT-SoVITS のときのみ API サーバーチェックを行う。
+Kokoro / T5Gemma-TTS はプロセス内推論のため外部サーバー不要。
 """
 
 from __future__ import annotations
@@ -60,6 +61,10 @@ def preflight_server_checks() -> None:
         print_step("  TTS エンジン: Kokoro（サーバー不要）")
         return
 
+    if tts_engine == "t5gemma":
+        print_step("  TTS エンジン: T5Gemma-TTS（サーバー不要）")
+        return
+
     if tts_engine == "gptsovits":
         if not _check_gptsovits_health():
             parsed = urlparse(GPTSOVITS_API_URL)
@@ -111,6 +116,20 @@ echo "=== ja-dubbing（Kokoro TTSモード） ==="
 echo ""
 echo "翻訳: CAT-Translate-7b（プロセス内推論・サーバー不要）"
 echo "TTS:  Kokoro TTS（プロセス内推論・サーバー不要）"
+echo ""
+echo "外部サーバーの起動は不要です。"
+echo "直接 'uv run ja-dubbing' を実行してください。"
+"""
+    elif tts_engine == "t5gemma":
+        script = """#!/bin/bash
+# === ja-dubbing サーバー起動スクリプト（T5Gemma-TTS モード） ===
+# 翻訳は CAT-Translate-7b（プロセス内推論・サーバー不要）
+# T5Gemma-TTS もプロセス内で動作するため、外部サーバーは不要です。
+
+echo "=== ja-dubbing（T5Gemma-TTS モード） ==="
+echo ""
+echo "翻訳: CAT-Translate-7b（プロセス内推論・サーバー不要）"
+echo "TTS:  T5Gemma-TTS（プロセス内推論・サーバー不要）"
 echo ""
 echo "外部サーバーの起動は不要です。"
 echo "直接 'uv run ja-dubbing' を実行してください。"

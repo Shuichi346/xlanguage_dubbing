@@ -4,12 +4,14 @@ input_videos/*
 __pycache__/
 *.pyc
 .DS_Store
+Thumbs.db
 *.egg-info/
 dist/
 build/
 .venv/
 MioTTS-Inference/
 GPT-SoVITS/
+T5Gemma-TTS/
 start_servers.sh
 whisper.cpp/
 uv.lock

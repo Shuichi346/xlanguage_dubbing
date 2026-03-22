@@ -4,7 +4,8 @@
 メイン処理フロー。
 1つの動画を英語→日本語吹き替え動画に変換する。
 TTS エンジンとして MioTTS（話者クローン対応）、Kokoro（高速・クローン非対応）、
-GPT-SoVITS（V2ProPlus ゼロショットボイスクローン）を選択可能。
+GPT-SoVITS（V2ProPlus ゼロショットボイスクローン）、
+T5Gemma-TTS（ゼロショットボイスクローン + 再生時間制御）を選択可能。
 翻訳エンジンは CAT-Translate-7b (GGUF, llama-cpp-python) を使用する。
 """
 
@@ -78,7 +79,7 @@ def _get_tts_engine() -> str:
 def _needs_speaker_diarization(tts_engine: str) -> bool:
     """話者分離が必要かどうかを判定する。"""
     # Kokoro はクローン非対応なので話者分離不要
-    # MioTTS と GPT-SoVITS は話者クローンのため話者分離が必要
+    # MioTTS / GPT-SoVITS / T5Gemma-TTS は話者クローンのため話者分離が必要
     return tts_engine != "kokoro"
 
 
@@ -307,6 +308,23 @@ def process_one_video(
             "（GPT-SoVITS は声質のみ抽出のため話者代表を使い回す）"
         )
 
+    elif tts_engine == "t5gemma":
+        if diarization is not None:
+            print_step(
+                "6. T5Gemma-TTS 用の話者代表リファレンス音声を抽出"
+                "（3〜15秒、ボイスクローン用）"
+            )
+            ref_cache.build_t5gemma_references(
+                video_path, diarization, segments_en
+            )
+        else:
+            _reload_cached_references(ref_cache, segments_en)
+
+        print_step(
+            "6.5. セグメント単位リファレンス: 不要"
+            "（T5Gemma-TTS は話者代表リファレンスを使用）"
+        )
+
     else:
         print_step("6. リファレンス音声抽出: Kokoro TTS（クローン非対応）のため省略")
 
@@ -332,6 +350,10 @@ def process_one_video(
         _run_tts_kokoro(segments_enja, seg_audio_dir, work_dir, progress)
     elif tts_engine == "gptsovits":
         _run_tts_gptsovits(
+            segments_enja, seg_audio_dir, work_dir, progress, ref_cache
+        )
+    elif tts_engine == "t5gemma":
+        _run_tts_t5gemma(
             segments_enja, seg_audio_dir, work_dir, progress, ref_cache
         )
     else:
@@ -666,6 +688,112 @@ def _run_tts_gptsovits(
         progress.set_step("tts", {"done_count": tts_done, "total": total})
         progress.set_artifact("tts_meta_json", str(tts_meta_path))
         progress.save()
+
+    if tts_failed > 0:
+        print_step(f"  TTS失敗セグメント数: {tts_failed}/{total}")
+
+    progress.set_step("tts", {"done_count": total, "total": total})
+    progress.set_artifact("tts_meta_json", str(tts_meta_path))
+    progress.save()
+
+
+def _run_tts_t5gemma(
+    segments_enja: list,
+    seg_audio_dir: Path,
+    work_dir: Path,
+    progress,
+    ref_cache: SpeakerReferenceCache,
+) -> None:
+    """T5Gemma-TTS でボイスクローン日本語音声を生成する。"""
+    from ja_dubbing.tts.t5gemma_tts import (
+        generate_segment_tts_t5gemma,
+        release_t5gemma_model,
+    )
+
+    print_step(
+        "8. T5Gemma-TTS でボイスクローン日本語音声生成"
+        "（再生時間制御あり）"
+    )
+
+    tts_meta_path = work_dir / "tts_meta.json"
+    tts_meta = load_tts_meta(tts_meta_path)
+
+    total = len(segments_enja)
+    tts_done = 0
+    tts_failed = 0
+
+    try:
+        for segno, seg in enumerate(segments_enja, start=1):
+            if seg.duration < MIN_SEGMENT_SEC:
+                tts_done += 1
+                continue
+
+            text = sanitize_text_for_tts(seg.text_ja)
+            if not text:
+                tts_done += 1
+                continue
+
+            out_audio_stub = seg_audio_dir / f"seg_{segno:05d}"
+            out_flac = out_audio_stub.with_suffix(".flac")
+
+            if segno in tts_meta and Path(tts_meta[segno].flac_path).exists():
+                tts_done += 1
+                if segno % 50 == 0:
+                    progress.set_step(
+                        "tts", {"done_count": tts_done, "total": total}
+                    )
+                    progress.save()
+                continue
+
+            if out_flac.exists():
+                dur = ffprobe_duration_sec(out_flac)
+                if dur > 0:
+                    tts_meta[segno] = TtsMeta(
+                        segno=segno,
+                        flac_path=str(out_flac),
+                        duration_sec=float(dur),
+                    )
+                    save_tts_meta_atomic(tts_meta_path, tts_meta)
+                    tts_done += 1
+                    progress.set_step(
+                        "tts", {"done_count": tts_done, "total": total}
+                    )
+                    progress.save()
+                    continue
+
+            print_step(
+                f"  TTS seg {segno}/{total}: {seg.start:.3f}-{seg.end:.3f} "
+                f"speaker={seg.speaker_id} (T5Gemma)"
+            )
+
+            try:
+                meta0 = generate_segment_tts_t5gemma(
+                    seg, out_audio_stub, ref_cache, segno=segno
+                )
+            except Exception as exc:
+                print_step(
+                    f"  TTS失敗（スキップ）: seg {segno}/{total}: {exc}"
+                )
+                meta0 = None
+                tts_failed += 1
+
+            if meta0 is None:
+                tts_done += 1
+                continue
+
+            tts_meta[segno] = TtsMeta(
+                segno=segno,
+                flac_path=meta0.flac_path,
+                duration_sec=meta0.duration_sec,
+            )
+            save_tts_meta_atomic(tts_meta_path, tts_meta)
+
+            tts_done += 1
+            progress.set_step("tts", {"done_count": tts_done, "total": total})
+            progress.set_artifact("tts_meta_json", str(tts_meta_path))
+            progress.save()
+    finally:
+        release_t5gemma_model()
 
     if tts_failed > 0:
         print_step(f"  TTS失敗セグメント数: {tts_failed}/{total}")

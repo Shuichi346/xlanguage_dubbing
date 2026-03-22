@@ -122,7 +122,7 @@ CAT_TRANSLATE_REPEAT_PENALTY = _env_float("CAT_TRANSLATE_REPEAT_PENALTY", 1.2)
 # TTSエンジン共通
 # =========================
 
-TTS_ENGINE = _env("TTS_ENGINE", "miotts")  # "miotts" or "kokoro" or "gptsovits"
+TTS_ENGINE = _env("TTS_ENGINE", "miotts")  # "miotts" or "kokoro" or "gptsovits" or "t5gemma"
 
 # =========================
 # MioTTS-Inference
@@ -168,6 +168,27 @@ MIOTTS_VALIDATION_MIN_CHARS = _env_int("MIOTTS_VALIDATION_MIN_CHARS", 4)
 KOKORO_MODEL = _env("KOKORO_MODEL", "kokoro")
 KOKORO_VOICE = _env("KOKORO_VOICE", "jf_alpha")
 KOKORO_SPEED = _env_float("KOKORO_SPEED", 1.0)
+
+# =========================
+# T5Gemma-TTS（ボイスクローン + 再生時間制御）
+# =========================
+
+T5GEMMA_MODEL_DIR = _env("T5GEMMA_MODEL_DIR", "Aratako/T5Gemma-TTS-2b-2b")
+T5GEMMA_XCODEC2_MODEL = _env(
+    "T5GEMMA_XCODEC2_MODEL", "NandemoGHS/Anime-XCodec2-44.1kHz-v2"
+)
+T5GEMMA_TOP_K = _env_int("T5GEMMA_TOP_K", 30)
+T5GEMMA_TOP_P = _env_float("T5GEMMA_TOP_P", 0.9)
+T5GEMMA_TEMPERATURE = _env_float("T5GEMMA_TEMPERATURE", 0.8)
+T5GEMMA_SEED = _env_int("T5GEMMA_SEED", 1)
+T5GEMMA_STOP_REPETITION = _env_int("T5GEMMA_STOP_REPETITION", 3)
+T5GEMMA_DURATION_SCALE = _env_float("T5GEMMA_DURATION_SCALE", 1.0)
+T5GEMMA_REFERENCE_MAX_SEC = _env_float("T5GEMMA_REFERENCE_MAX_SEC", 15.0)
+T5GEMMA_REFERENCE_MIN_SEC = _env_float("T5GEMMA_REFERENCE_MIN_SEC", 3.0)
+T5GEMMA_REFERENCE_TARGET_SEC = _env_float("T5GEMMA_REFERENCE_TARGET_SEC", 8.0)
+T5GEMMA_CPU_CODEC = _env_bool("T5GEMMA_CPU_CODEC", True)
+T5GEMMA_DURATION_TOLERANCE = _env_float("T5GEMMA_DURATION_TOLERANCE", 0.3)
+T5GEMMA_QUALITY_RETRIES = _env_int("T5GEMMA_QUALITY_RETRIES", 2)
 
 # =========================
 # GPT-SoVITS（V2ProPlus ゼロショットボイスクローン）
