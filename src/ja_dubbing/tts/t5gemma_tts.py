@@ -55,6 +55,8 @@ _AUDIO_TOKENIZER = None
 _MODEL_CONFIG = None
 # モデルロードが回復不能な形で失敗した場合にセットされるフラグ
 _MODEL_LOAD_FAILED = False
+# XCodec2 エンコード結果のキャッシュ（参照音声パス → エンコード済みトークン）
+_ENCODE_CACHE: dict[str, torch.Tensor] = {}
 
 _REPLACE_MAP = {
     r"\t": "",
@@ -267,7 +269,15 @@ def _tokenize_audio(
     offset: int = -1,
     num_frames: int = -1,
 ) -> torch.Tensor:
-    """音声ファイルを XCodec2 コード列へ変換する。"""
+    """音声ファイルを XCodec2 コード列へ変換する（キャッシュ付き）。"""
+    cache_key = str(Path(str(audio_path)).resolve())
+    if offset != -1 or num_frames != -1:
+        cache_key += f"@{offset}:{num_frames}"
+
+    cached = _ENCODE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached.clone()
+
     wav, sample_rate = _load_audio(audio_path, offset, num_frames)
     target_sr = getattr(tokenizer, "encode_sample_rate", tokenizer.sample_rate)
     if sample_rate != target_sr:
@@ -282,7 +292,10 @@ def _tokenize_audio(
         wav = wav.mean(dim=0, keepdim=True)
     wav = wav.unsqueeze(0)
     with torch.no_grad():
-        return tokenizer.encode(wav)
+        encoded = tokenizer.encode(wav)
+
+    _ENCODE_CACHE[cache_key] = encoded.clone()
+    return encoded
 
 
 def _normalize_japanese_text(text: str) -> str:
@@ -486,12 +499,7 @@ def _get_model_dtype(device: str) -> torch.dtype:
 
 
 def _patch_tied_weights_keys(model: Any) -> None:
-    """transformers 5.x 互換パッチ: all_tied_weights_keys 属性を補完する。
-
-    T5Gemma-TTS のリモートモデルコードが transformers 5.x の
-    all_tied_weights_keys 属性に未対応の場合に、空の辞書を設定して
-    AttributeError を回避する。
-    """
+    """transformers 5.x 互換パッチ: all_tied_weights_keys 属性を補完する。"""
     if not hasattr(model, "all_tied_weights_keys"):
         model.all_tied_weights_keys = {}
 
@@ -535,7 +543,6 @@ def _load_t5gemma_model():
             )
         except AttributeError as attr_err:
             if "all_tied_weights_keys" in str(attr_err):
-                # transformers 5.x との非互換: モンキーパッチで回避
                 print_step(
                     "  transformers 5.x 互換パッチを適用中..."
                 )
@@ -597,11 +604,7 @@ def _load_t5gemma_model():
 
 
 def _apply_global_tied_weights_patch() -> None:
-    """torch.nn.Module の __getattr__ にパッチを当てて all_tied_weights_keys を補完する。
-
-    transformers 5.x が from_pretrained 内部で all_tied_weights_keys にアクセスするが、
-    T5Gemma-TTS のリモートモデルコードがこの属性を定義していない場合の回避策。
-    """
+    """torch.nn.Module の __getattr__ にパッチを当てて all_tied_weights_keys を補完する。"""
     import torch.nn
 
     _orig_getattr = torch.nn.Module.__getattr__
@@ -683,7 +686,11 @@ def _inference_one_sample(
 
     has_reference_audio = reference_speech is not None and reference_speech.exists()
     if has_reference_audio:
+        encode_start = time.time()
         encoded_frames = _tokenize_audio(audio_tokenizer, reference_speech)
+        encode_elapsed = time.time() - encode_start
+        if encode_elapsed > 1.0:
+            print_step(f"    XCodec2 エンコード: {encode_elapsed:.2f}秒")
     else:
         encoded_frames = torch.empty(
             (1, n_codebooks, 0),
@@ -772,18 +779,23 @@ def _inference_one_sample(
         prompt_frames=prompt_frames,
         num_samples=1,
     )
-    elapsed = time.time() - started_at
+    infer_elapsed = time.time() - started_at
 
     clean_frames = _strip_special_audio_tokens(gen_frames, y_sep_token, eos_token)
+
+    decode_start = time.time()
     waveform = audio_tokenizer.decode(clean_frames)
+    decode_elapsed = time.time() - decode_start
 
     generated_tokens = clean_frames.shape[-1]
     audio_duration = generated_tokens / codec_sr
-    tokens_per_sec = generated_tokens / elapsed if elapsed > 0 else 0.0
+    tokens_per_sec = generated_tokens / infer_elapsed if infer_elapsed > 0 else 0.0
     print_step(
         f"    T5Gemma 推論完了: {generated_tokens} token / {audio_duration:.2f}秒 "
         f"({tokens_per_sec:.2f} token/s)"
     )
+    if decode_elapsed > 1.0:
+        print_step(f"    XCodec2 デコード: {decode_elapsed:.2f}秒")
     return waveform, audio_tokenizer.sample_rate
 
 
@@ -996,6 +1008,9 @@ def generate_segment_tts_t5gemma(
 def release_t5gemma_model() -> None:
     """T5Gemma-TTS 一式を解放してメモリを回復する。"""
     global _AUDIO_TOKENIZER, _MODEL_CONFIG, _T5GEMMA_MODEL, _TEXT_TOKENIZER
+    global _ENCODE_CACHE
+
+    _ENCODE_CACHE.clear()
 
     for name in (
         "_AUDIO_TOKENIZER",
