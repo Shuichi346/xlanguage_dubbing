@@ -52,13 +52,15 @@ _T5GEMMA_MODEL = None
 _TEXT_TOKENIZER = None
 _AUDIO_TOKENIZER = None
 _MODEL_CONFIG = None
+# モデルロードが回復不能な形で失敗した場合にセットされるフラグ
+_MODEL_LOAD_FAILED = False
 
 _REPLACE_MAP = {
     r"\t": "",
     r"\[n\]": "",
     r" ": "",
     r"　": "",
-    r"[;▼♀♂《》≪≫①②③④⑤⑥]": "",
+    r"[;▼♀♂《》≪≫①②③④⑤⑥]": "",
     r"[\u02d7\u2010-\u2015\u2043\u2212\u23af\u23e4\u2500\u2501\u2e3a\u2e3b]": "",
     r"[\uff5e\u301C]": "ー",
     r"？": "?",
@@ -269,7 +271,12 @@ def _tokenize_audio(
     target_sr = getattr(tokenizer, "encode_sample_rate", tokenizer.sample_rate)
     if sample_rate != target_sr:
         wav = wav.to(dtype=torch.float32)
-        wav = torchaudio.transforms.Resample(sample_rate, target_sr)(wav)
+        if _torch_ge_29():
+            import torchaudio.functional as F
+
+            wav = F.resample(wav, sample_rate, target_sr)
+        else:
+            wav = torchaudio.transforms.Resample(sample_rate, target_sr)(wav)
     if wav.shape[0] == 2:
         wav = wav.mean(dim=0, keepdim=True)
     wav = wav.unsqueeze(0)
@@ -477,18 +484,38 @@ def _get_model_dtype(device: str) -> torch.dtype:
     return torch.bfloat16
 
 
+def _patch_tied_weights_keys(model: Any) -> None:
+    """transformers 5.x 互換パッチ: all_tied_weights_keys 属性を補完する。
+
+    T5Gemma-TTS のリモートモデルコードが transformers 5.x の
+    all_tied_weights_keys 属性に未対応の場合に、空の辞書を設定して
+    AttributeError を回避する。
+    """
+    if not hasattr(model, "all_tied_weights_keys"):
+        model.all_tied_weights_keys = {}
+
+
 def _load_t5gemma_model():
     """T5Gemma-TTS 一式を遅延ロードする。"""
-    global _AUDIO_TOKENIZER, _MODEL_CONFIG, _T5GEMMA_MODEL, _TEXT_TOKENIZER
+    global _AUDIO_TOKENIZER, _MODEL_CONFIG, _MODEL_LOAD_FAILED
+    global _T5GEMMA_MODEL, _TEXT_TOKENIZER
 
     if _T5GEMMA_MODEL is not None:
         return _T5GEMMA_MODEL, _TEXT_TOKENIZER, _AUDIO_TOKENIZER, _MODEL_CONFIG
+
+    if _MODEL_LOAD_FAILED:
+        raise PipelineError(
+            "T5Gemma-TTS モデルの初期化に既に失敗しています。"
+            "transformers のバージョンを確認してください: "
+            "uv pip install 'transformers>=4.57.0,<5.0.0'"
+        )
 
     os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
     try:
         from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
     except ImportError as exc:
+        _MODEL_LOAD_FAILED = True
         raise PipelineError(
             "transformers がインストールされていません。\n"
             "  uv sync を実行してください。"
@@ -499,17 +526,45 @@ def _load_t5gemma_model():
 
     print_step(f"  T5Gemma-TTS モデル初期化中: {T5GEMMA_MODEL_DIR} ({device})")
     try:
-        model = AutoModelForSeq2SeqLM.from_pretrained(
-            T5GEMMA_MODEL_DIR,
-            trust_remote_code=True,
-            torch_dtype=model_dtype,
-        )
-    except TypeError:
-        model = AutoModelForSeq2SeqLM.from_pretrained(
-            T5GEMMA_MODEL_DIR,
-            trust_remote_code=True,
-            dtype=model_dtype,
-        )
+        try:
+            model = AutoModelForSeq2SeqLM.from_pretrained(
+                T5GEMMA_MODEL_DIR,
+                trust_remote_code=True,
+                torch_dtype=model_dtype,
+            )
+        except AttributeError as attr_err:
+            if "all_tied_weights_keys" in str(attr_err):
+                # transformers 5.x との非互換: モンキーパッチで回避
+                print_step(
+                    "  transformers 5.x 互換パッチを適用中..."
+                )
+                _apply_global_tied_weights_patch()
+                model = AutoModelForSeq2SeqLM.from_pretrained(
+                    T5GEMMA_MODEL_DIR,
+                    trust_remote_code=True,
+                    torch_dtype=model_dtype,
+                )
+            else:
+                raise
+        except TypeError:
+            model = AutoModelForSeq2SeqLM.from_pretrained(
+                T5GEMMA_MODEL_DIR,
+                trust_remote_code=True,
+                dtype=model_dtype,
+            )
+    except PipelineError:
+        _MODEL_LOAD_FAILED = True
+        raise
+    except Exception as exc:
+        _MODEL_LOAD_FAILED = True
+        raise PipelineError(
+            f"T5Gemma-TTS モデルの読み込みに失敗しました: {exc}\n"
+            "transformers のバージョンを確認してください。T5Gemma-TTS は "
+            "transformers 4.57.x が必要です:\n"
+            "  uv pip install 'transformers>=4.57.0,<5.0.0'"
+        ) from exc
+
+    _patch_tied_weights_keys(model)
 
     if not getattr(model, "hf_device_map", None):
         model = model.to(device)
@@ -538,6 +593,24 @@ def _load_t5gemma_model():
         f"codec_device={codec_device}"
     )
     return _T5GEMMA_MODEL, _TEXT_TOKENIZER, _AUDIO_TOKENIZER, _MODEL_CONFIG
+
+
+def _apply_global_tied_weights_patch() -> None:
+    """torch.nn.Module の __getattr__ にパッチを当てて all_tied_weights_keys を補完する。
+
+    transformers 5.x が from_pretrained 内部で all_tied_weights_keys にアクセスするが、
+    T5Gemma-TTS のリモートモデルコードがこの属性を定義していない場合の回避策。
+    """
+    import torch.nn
+
+    _orig_getattr = torch.nn.Module.__getattr__
+
+    def _patched_getattr(self, name):
+        if name == "all_tied_weights_keys":
+            return {}
+        return _orig_getattr(self, name)
+
+    torch.nn.Module.__getattr__ = _patched_getattr
 
 
 def _encode_text(text_tokenizer, text: str) -> list[int]:
