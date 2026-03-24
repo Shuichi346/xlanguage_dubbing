@@ -42,7 +42,7 @@ def _get_pipeline():
     try:
         _PIPELINE = Pipeline.from_pretrained(
             PYANNOTE_MODEL,
-            use_auth_token=HF_AUTH_TOKEN,
+            token=HF_AUTH_TOKEN,
         )
     except TypeError:
         _PIPELINE = Pipeline.from_pretrained(

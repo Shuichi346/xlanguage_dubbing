@@ -50,6 +50,20 @@ def preflight_checks() -> None:
         from ja_dubbing.servers.health import preflight_server_checks
         preflight_server_checks()
 
+    if tts_engine == "t5gemma":
+        try:
+            import torch
+
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                print_step("  T5Gemma-TTS 推論デバイス: mps")
+            else:
+                print_step("  T5Gemma-TTS 推論デバイス: cpu")
+        except ImportError as exc:
+            raise PipelineError(
+                "torch がインストールされていません。\n"
+                "  uv sync を実行してください。"
+            ) from exc
+
 
 def list_videos(folder: Path) -> list[Path]:
     """対象動画ファイルのリストを取得する。"""

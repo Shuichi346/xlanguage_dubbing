@@ -1,34 +1,21 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 メイン処理フロー。
 1つの動画を英語→日本語吹き替え動画に変換する。
 TTS エンジンとして MioTTS（話者クローン対応）、Kokoro（高速・クローン非対応）、
-GPT-SoVITS（V2ProPlus ゼロショットボイスクローン）を選択可能。
+GPT-SoVITS（V2ProPlus ゼロショットボイスクローン）、
+T5Gemma-TTS（ゼロショットボイスクローン + 再生時間制御）を選択可能。
 翻訳エンジンは CAT-Translate-7b (GGUF, llama-cpp-python) を使用する。
 """
 
 from __future__ import annotations
 
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 from ja_dubbing.asr import get_asr_engine
-from ja_dubbing.config import (
-    KEEP_TEMP,
-    MIN_SEGMENT_SEC,
-    OUTPUT_SUFFIX,
-    SPACY_CHUNK_GAP_SEC,
-    SPACY_CHUNK_MAX_CHARS,
-    SPACY_CHUNK_MAX_SEC,
-    SPACY_UNIT_MAX_SENTENCES,
-    SPACY_UNIT_MERGE_MAX_CHARS,
-    SPACY_UNIT_MERGE_MAX_GAP_SEC,
-    TTS_ENGINE,
-)
-from ja_dubbing.core.models import TtsMeta
-from ja_dubbing.core.progress import ProgressStore
-from ja_dubbing.core.retime import build_retime_parts
+from ja_dubbing.asr.whisper import extract_wav_for_whisper
 from ja_dubbing.audio.ffmpeg import (
     concat_audio_to_flac,
     concat_ts_files,
@@ -45,7 +32,21 @@ from ja_dubbing.audio.segment_io import (
     save_segments_json_atomic,
     save_srt_atomic,
 )
-from ja_dubbing.asr.whisper import extract_wav_for_whisper
+from ja_dubbing.config import (
+    KEEP_TEMP,
+    MIN_SEGMENT_SEC,
+    OUTPUT_SUFFIX,
+    SPACY_CHUNK_GAP_SEC,
+    SPACY_CHUNK_MAX_CHARS,
+    SPACY_CHUNK_MAX_SEC,
+    SPACY_UNIT_MAX_SENTENCES,
+    SPACY_UNIT_MERGE_MAX_CHARS,
+    SPACY_UNIT_MERGE_MAX_GAP_SEC,
+    TTS_ENGINE,
+)
+from ja_dubbing.core.models import TtsMeta
+from ja_dubbing.core.progress import ProgressStore
+from ja_dubbing.core.retime import build_retime_parts
 from ja_dubbing.segments.merge import merge_segments
 from ja_dubbing.segments.sentence import merge_sentence_units
 from ja_dubbing.segments.spacy_split import (
@@ -78,7 +79,7 @@ def _get_tts_engine() -> str:
 def _needs_speaker_diarization(tts_engine: str) -> bool:
     """話者分離が必要かどうかを判定する。"""
     # Kokoro はクローン非対応なので話者分離不要
-    # MioTTS と GPT-SoVITS は話者クローンのため話者分離が必要
+    # MioTTS / GPT-SoVITS / T5Gemma-TTS は話者クローンのため話者分離が必要
     return tts_engine != "kokoro"
 
 
@@ -126,7 +127,7 @@ def process_one_video(
         progress.step("probe_done")
         and isinstance(
             progress.data.get("artifacts", {}).get("video_duration_sec"),
-            (int, float),
+            int | float,
         )
     ):
         video_dur = float(progress.data["artifacts"]["video_duration_sec"])
@@ -215,7 +216,7 @@ def process_one_video(
 
                 print_step("4. Whisperセグメントに話者ID割り当て")
                 segments_with_speaker = assign_speakers(segments_raw, diarization)
-                speaker_ids = set(s.speaker_id for s in segments_with_speaker)
+                speaker_ids = {s.speaker_id for s in segments_with_speaker}
                 print_step(f"   話者数: {len(speaker_ids)}, ID: {sorted(speaker_ids)}")
 
                 release_pipeline()
@@ -307,6 +308,24 @@ def process_one_video(
             "（GPT-SoVITS は声質のみ抽出のため話者代表を使い回す）"
         )
 
+    elif tts_engine == "t5gemma":
+        if diarization is not None:
+            print_step(
+                "6. T5Gemma-TTS 用の話者代表リファレンス音声を抽出"
+                "（3〜15秒、ボイスクローン用）"
+            )
+            ref_cache.build_t5gemma_references(
+                video_path, diarization, segments_en
+            )
+        else:
+            _reload_cached_references(ref_cache, segments_en)
+
+        print_step(
+            "6.5. T5Gemma-TTS セグメント単位リファレンス音声を抽出"
+            "（ASR 再文字起こしで音声・テキスト一致を保証）"
+        )
+        ref_cache.build_t5gemma_segment_references(video_path, segments_en)
+
     else:
         print_step("6. リファレンス音声抽出: Kokoro TTS（クローン非対応）のため省略")
 
@@ -332,6 +351,10 @@ def process_one_video(
         _run_tts_kokoro(segments_enja, seg_audio_dir, work_dir, progress)
     elif tts_engine == "gptsovits":
         _run_tts_gptsovits(
+            segments_enja, seg_audio_dir, work_dir, progress, ref_cache
+        )
+    elif tts_engine == "t5gemma":
+        _run_tts_t5gemma(
             segments_enja, seg_audio_dir, work_dir, progress, ref_cache
         )
     else:
@@ -479,6 +502,149 @@ def process_one_video(
     print_step("メモリクリーンアップ実行済み")
 
 
+def _should_skip_tts_segment(seg) -> bool:
+    """TTS対象外のセグメントかどうかを返す。"""
+    if seg.duration < MIN_SEGMENT_SEC:
+        return True
+    return not sanitize_text_for_tts(seg.text_ja)
+
+
+def _save_tts_meta_entry(
+    tts_meta: dict[int, TtsMeta],
+    tts_meta_path: Path,
+    segno: int,
+    flac_path: str,
+    duration_sec: float,
+) -> None:
+    """TTSメタ情報を1件保存する。"""
+    tts_meta[segno] = TtsMeta(
+        segno=segno,
+        flac_path=flac_path,
+        duration_sec=float(duration_sec),
+    )
+    save_tts_meta_atomic(tts_meta_path, tts_meta)
+
+
+def _update_tts_progress(
+    progress,
+    done_count: int,
+    total: int,
+    tts_meta_path: Path,
+    save_artifact: bool = False,
+) -> None:
+    """TTS進捗を保存する。"""
+    progress.set_step("tts", {"done_count": done_count, "total": total})
+    if save_artifact:
+        progress.set_artifact("tts_meta_json", str(tts_meta_path))
+    progress.save()
+
+
+def _reuse_existing_tts_output(
+    segno: int,
+    out_flac: Path,
+    tts_meta: dict[int, TtsMeta],
+    tts_meta_path: Path,
+) -> str | None:
+    """既存TTS出力を再利用できる場合は理由を返す。"""
+    if segno in tts_meta and Path(tts_meta[segno].flac_path).exists():
+        return "meta"
+
+    if out_flac.exists():
+        dur = ffprobe_duration_sec(out_flac)
+        if dur > 0:
+            _save_tts_meta_entry(
+                tts_meta,
+                tts_meta_path,
+                segno=segno,
+                flac_path=str(out_flac),
+                duration_sec=dur,
+            )
+            return "flac"
+
+    return None
+
+
+def _run_tts_loop(
+    segments_enja: list,
+    seg_audio_dir: Path,
+    work_dir: Path,
+    progress,
+    segment_label_builder: Callable[[int, int, object], str],
+    generator: Callable[[object, Path, int], TtsMeta | None],
+) -> None:
+    """各TTSエンジン共通のセグメント処理ループ。"""
+    tts_meta_path = work_dir / "tts_meta.json"
+    tts_meta = load_tts_meta(tts_meta_path)
+
+    total = len(segments_enja)
+    tts_done = 0
+    tts_failed = 0
+
+    for segno, seg in enumerate(segments_enja, start=1):
+        if _should_skip_tts_segment(seg):
+            tts_done += 1
+            continue
+
+        out_audio_stub = seg_audio_dir / f"seg_{segno:05d}"
+        out_flac = out_audio_stub.with_suffix(".flac")
+
+        reused = _reuse_existing_tts_output(
+            segno=segno,
+            out_flac=out_flac,
+            tts_meta=tts_meta,
+            tts_meta_path=tts_meta_path,
+        )
+        if reused is not None:
+            tts_done += 1
+            if reused == "meta":
+                if segno % 50 == 0:
+                    _update_tts_progress(progress, tts_done, total, tts_meta_path)
+            else:
+                _update_tts_progress(progress, tts_done, total, tts_meta_path)
+            continue
+
+        print_step(segment_label_builder(segno, total, seg))
+
+        try:
+            meta0 = generator(seg, out_audio_stub, segno)
+        except Exception as exc:
+            print_step(f"  TTS失敗（スキップ）: seg {segno}/{total}: {exc}")
+            meta0 = None
+            tts_failed += 1
+
+        if meta0 is None:
+            tts_done += 1
+            continue
+
+        _save_tts_meta_entry(
+            tts_meta,
+            tts_meta_path,
+            segno=segno,
+            flac_path=meta0.flac_path,
+            duration_sec=meta0.duration_sec,
+        )
+
+        tts_done += 1
+        _update_tts_progress(
+            progress,
+            done_count=tts_done,
+            total=total,
+            tts_meta_path=tts_meta_path,
+            save_artifact=True,
+        )
+
+    if tts_failed > 0:
+        print_step(f"  TTS失敗セグメント数: {tts_failed}/{total}")
+
+    _update_tts_progress(
+        progress,
+        done_count=total,
+        total=total,
+        tts_meta_path=tts_meta_path,
+        save_artifact=True,
+    )
+
+
 def _run_tts_kokoro(
     segments_enja: list,
     seg_audio_dir: Path,
@@ -490,89 +656,20 @@ def _run_tts_kokoro(
 
     print_step("8. Kokoro TTS で日本語音声生成（高速・クローン非対応）")
 
-    tts_meta_path = work_dir / "tts_meta.json"
-    tts_meta = load_tts_meta(tts_meta_path)
+    def _build_segment_label(segno: int, total: int, seg: object) -> str:
+        return f"  TTS seg {segno}/{total}: {seg.start:.3f}-{seg.end:.3f} (Kokoro)"
 
-    total = len(segments_enja)
-    tts_done = 0
-    tts_failed = 0
+    def _generate(seg: object, out_audio_stub: Path, segno: int) -> TtsMeta | None:
+        return generate_segment_tts_kokoro(seg, out_audio_stub, segno=segno)
 
-    for segno, seg in enumerate(segments_enja, start=1):
-        if seg.duration < MIN_SEGMENT_SEC:
-            tts_done += 1
-            continue
-
-        text = sanitize_text_for_tts(seg.text_ja)
-        if not text:
-            tts_done += 1
-            continue
-
-        out_audio_stub = seg_audio_dir / f"seg_{segno:05d}"
-        out_flac = out_audio_stub.with_suffix(".flac")
-
-        if segno in tts_meta and Path(tts_meta[segno].flac_path).exists():
-            tts_done += 1
-            if segno % 50 == 0:
-                progress.set_step(
-                    "tts", {"done_count": tts_done, "total": total}
-                )
-                progress.save()
-            continue
-
-        if out_flac.exists():
-            dur = ffprobe_duration_sec(out_flac)
-            if dur > 0:
-                tts_meta[segno] = TtsMeta(
-                    segno=segno,
-                    flac_path=str(out_flac),
-                    duration_sec=float(dur),
-                )
-                save_tts_meta_atomic(tts_meta_path, tts_meta)
-                tts_done += 1
-                progress.set_step(
-                    "tts", {"done_count": tts_done, "total": total}
-                )
-                progress.save()
-                continue
-
-        print_step(
-            f"  TTS seg {segno}/{total}: {seg.start:.3f}-{seg.end:.3f} "
-            f"(Kokoro)"
-        )
-
-        try:
-            meta0 = generate_segment_tts_kokoro(
-                seg, out_audio_stub, segno=segno
-            )
-        except Exception as exc:
-            print_step(
-                f"  TTS失敗（スキップ）: seg {segno}/{total}: {exc}"
-            )
-            meta0 = None
-            tts_failed += 1
-
-        if meta0 is None:
-            tts_done += 1
-            continue
-
-        tts_meta[segno] = TtsMeta(
-            segno=segno,
-            flac_path=meta0.flac_path,
-            duration_sec=meta0.duration_sec,
-        )
-        save_tts_meta_atomic(tts_meta_path, tts_meta)
-
-        tts_done += 1
-        progress.set_step("tts", {"done_count": tts_done, "total": total})
-        progress.set_artifact("tts_meta_json", str(tts_meta_path))
-        progress.save()
-
-    if tts_failed > 0:
-        print_step(f"  TTS失敗セグメント数: {tts_failed}/{total}")
-
-    progress.set_step("tts", {"done_count": total, "total": total})
-    progress.set_artifact("tts_meta_json", str(tts_meta_path))
-    progress.save()
+    _run_tts_loop(
+        segments_enja=segments_enja,
+        seg_audio_dir=seg_audio_dir,
+        work_dir=work_dir,
+        progress=progress,
+        segment_label_builder=_build_segment_label,
+        generator=_generate,
+    )
 
 
 def _run_tts_gptsovits(
@@ -590,89 +687,75 @@ def _run_tts_gptsovits(
         "（話者代表リファレンス使用）"
     )
 
-    tts_meta_path = work_dir / "tts_meta.json"
-    tts_meta = load_tts_meta(tts_meta_path)
-
-    total = len(segments_enja)
-    tts_done = 0
-    tts_failed = 0
-
-    for segno, seg in enumerate(segments_enja, start=1):
-        if seg.duration < MIN_SEGMENT_SEC:
-            tts_done += 1
-            continue
-
-        text = sanitize_text_for_tts(seg.text_ja)
-        if not text:
-            tts_done += 1
-            continue
-
-        out_audio_stub = seg_audio_dir / f"seg_{segno:05d}"
-        out_flac = out_audio_stub.with_suffix(".flac")
-
-        if segno in tts_meta and Path(tts_meta[segno].flac_path).exists():
-            tts_done += 1
-            if segno % 50 == 0:
-                progress.set_step(
-                    "tts", {"done_count": tts_done, "total": total}
-                )
-                progress.save()
-            continue
-
-        if out_flac.exists():
-            dur = ffprobe_duration_sec(out_flac)
-            if dur > 0:
-                tts_meta[segno] = TtsMeta(
-                    segno=segno,
-                    flac_path=str(out_flac),
-                    duration_sec=float(dur),
-                )
-                save_tts_meta_atomic(tts_meta_path, tts_meta)
-                tts_done += 1
-                progress.set_step(
-                    "tts", {"done_count": tts_done, "total": total}
-                )
-                progress.save()
-                continue
-
-        print_step(
+    def _build_segment_label(segno: int, total: int, seg: object) -> str:
+        return (
             f"  TTS seg {segno}/{total}: {seg.start:.3f}-{seg.end:.3f} "
             f"speaker={seg.speaker_id} (GPT-SoVITS)"
         )
 
-        try:
-            meta0 = generate_segment_tts_gptsovits(
+    def _generate(seg: object, out_audio_stub: Path, segno: int) -> TtsMeta | None:
+        return generate_segment_tts_gptsovits(
+            seg, out_audio_stub, ref_cache, segno=segno
+        )
+
+    _run_tts_loop(
+        segments_enja=segments_enja,
+        seg_audio_dir=seg_audio_dir,
+        work_dir=work_dir,
+        progress=progress,
+        segment_label_builder=_build_segment_label,
+        generator=_generate,
+    )
+
+
+def _run_tts_t5gemma(
+    segments_enja: list,
+    seg_audio_dir: Path,
+    work_dir: Path,
+    progress,
+    ref_cache: SpeakerReferenceCache,
+) -> None:
+    """T5Gemma-TTS でボイスクローン日本語音声を生成する。"""
+    from ja_dubbing.tts.t5gemma_tts import (
+        generate_segment_tts_t5gemma,
+        release_t5gemma_model,
+    )
+
+    print_step(
+        "8. T5Gemma-TTS でボイスクローン日本語音声生成"
+        "（セグメント単位リファレンス優先、再生時間制御あり）"
+    )
+
+    try:
+        def _build_segment_label(segno: int, total: int, seg: object) -> str:
+            has_seg_ref = (
+                ref_cache.get_t5gemma_segment_reference_path(segno) is not None
+            )
+            ref_type = "セグメント単位" if has_seg_ref else "話者代表"
+            return (
+                f"  TTS seg {segno}/{total}: {seg.start:.3f}-{seg.end:.3f} "
+                f"speaker={seg.speaker_id} ref={ref_type} (T5Gemma)"
+            )
+
+        def _generate(
+            seg: object,
+            out_audio_stub: Path,
+            segno: int,
+        ) -> TtsMeta | None:
+            return generate_segment_tts_t5gemma(
                 seg, out_audio_stub, ref_cache, segno=segno
             )
-        except Exception as exc:
-            print_step(
-                f"  TTS失敗（スキップ）: seg {segno}/{total}: {exc}"
-            )
-            meta0 = None
-            tts_failed += 1
 
-        if meta0 is None:
-            tts_done += 1
-            continue
-
-        tts_meta[segno] = TtsMeta(
-            segno=segno,
-            flac_path=meta0.flac_path,
-            duration_sec=meta0.duration_sec,
+        _run_tts_loop(
+            segments_enja=segments_enja,
+            seg_audio_dir=seg_audio_dir,
+            work_dir=work_dir,
+            progress=progress,
+            segment_label_builder=_build_segment_label,
+            generator=_generate,
         )
-        save_tts_meta_atomic(tts_meta_path, tts_meta)
-
-        tts_done += 1
-        progress.set_step("tts", {"done_count": tts_done, "total": total})
-        progress.set_artifact("tts_meta_json", str(tts_meta_path))
-        progress.save()
-
-    if tts_failed > 0:
-        print_step(f"  TTS失敗セグメント数: {tts_failed}/{total}")
-
-    progress.set_step("tts", {"done_count": total, "total": total})
-    progress.set_artifact("tts_meta_json", str(tts_meta_path))
-    progress.save()
+    finally:
+        release_t5gemma_model()
 
 
 def _run_tts_miotts(
@@ -687,91 +770,25 @@ def _run_tts_miotts(
 
     print_step("8. MioTTS で話者クローン日本語音声生成（セグメント単位リファレンス優先）")
 
-    tts_meta_path = work_dir / "tts_meta.json"
-    tts_meta = load_tts_meta(tts_meta_path)
-
-    total = len(segments_enja)
-    tts_done = 0
-    tts_failed = 0
-
-    for segno, seg in enumerate(segments_enja, start=1):
-        if seg.duration < MIN_SEGMENT_SEC:
-            tts_done += 1
-            continue
-
-        text = sanitize_text_for_tts(seg.text_ja)
-        if not text:
-            tts_done += 1
-            continue
-
-        out_audio_stub = seg_audio_dir / f"seg_{segno:05d}"
-        out_flac = out_audio_stub.with_suffix(".flac")
-
-        if segno in tts_meta and Path(tts_meta[segno].flac_path).exists():
-            tts_done += 1
-            if segno % 50 == 0:
-                progress.set_step(
-                    "tts", {"done_count": tts_done, "total": total}
-                )
-                progress.save()
-            continue
-
-        if out_flac.exists():
-            dur = ffprobe_duration_sec(out_flac)
-            if dur > 0:
-                tts_meta[segno] = TtsMeta(
-                    segno=segno,
-                    flac_path=str(out_flac),
-                    duration_sec=float(dur),
-                )
-                save_tts_meta_atomic(tts_meta_path, tts_meta)
-                tts_done += 1
-                progress.set_step(
-                    "tts", {"done_count": tts_done, "total": total}
-                )
-                progress.save()
-                continue
-
+    def _build_segment_label(segno: int, total: int, seg: object) -> str:
         has_seg_ref = ref_cache.get_segment_reference_path(segno) is not None
         ref_type = "セグメント単位" if has_seg_ref else "話者代表"
-        print_step(
+        return (
             f"  TTS seg {segno}/{total}: {seg.start:.3f}-{seg.end:.3f} "
             f"speaker={seg.speaker_id} ref={ref_type}"
         )
 
-        try:
-            meta0 = generate_segment_tts(
-                seg, out_audio_stub, ref_cache, segno=segno
-            )
-        except Exception as exc:
-            print_step(
-                f"  TTS失敗（スキップ）: seg {segno}/{total}: {exc}"
-            )
-            meta0 = None
-            tts_failed += 1
+    def _generate(seg: object, out_audio_stub: Path, segno: int) -> TtsMeta | None:
+        return generate_segment_tts(seg, out_audio_stub, ref_cache, segno=segno)
 
-        if meta0 is None:
-            tts_done += 1
-            continue
-
-        tts_meta[segno] = TtsMeta(
-            segno=segno,
-            flac_path=meta0.flac_path,
-            duration_sec=meta0.duration_sec,
-        )
-        save_tts_meta_atomic(tts_meta_path, tts_meta)
-
-        tts_done += 1
-        progress.set_step("tts", {"done_count": tts_done, "total": total})
-        progress.set_artifact("tts_meta_json", str(tts_meta_path))
-        progress.save()
-
-    if tts_failed > 0:
-        print_step(f"  TTS失敗セグメント数: {tts_failed}/{total}")
-
-    progress.set_step("tts", {"done_count": total, "total": total})
-    progress.set_artifact("tts_meta_json", str(tts_meta_path))
-    progress.save()
+    _run_tts_loop(
+        segments_enja=segments_enja,
+        seg_audio_dir=seg_audio_dir,
+        work_dir=work_dir,
+        progress=progress,
+        segment_label_builder=_build_segment_label,
+        generator=_generate,
+    )
 
 
 def _reload_cached_references(
@@ -779,6 +796,7 @@ def _reload_cached_references(
     segments: list,
 ) -> None:
     """再開時にキャッシュ済みリファレンスを検出してロードする。"""
-    speaker_ids = set(s.speaker_id for s in segments if s.speaker_id)
+    speaker_ids = {s.speaker_id for s in segments if s.speaker_id}
     ref_cache.reload_speaker_references(speaker_ids)
     ref_cache.reload_segment_references(len(segments))
+    ref_cache.reload_t5gemma_segment_references(len(segments))

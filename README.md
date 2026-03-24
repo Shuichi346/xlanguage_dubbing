@@ -94,10 +94,10 @@ cp .env.example .env
 |------|------|--------|
 | `VIDEO_FOLDER` | 吹き替えたい動画を置くフォルダ | `./input_videos` |
 | `ASR_ENGINE` | 音声認識エンジン | `whisper` または `vibevoice` |
-| `TTS_ENGINE` | 音声合成エンジン | `kokoro`、`miotts`、または `gptsovits` |
+| `TTS_ENGINE` | 音声合成エンジン | `kokoro`、`miotts`、`gptsovits`、または `t5gemma` |
 | `HF_AUTH_TOKEN` | HuggingFace のトークン（※条件付き） | `hf_xxxxxxxxxxxx` |
 
-> **`HF_AUTH_TOKEN` が必要な条件**: `ASR_ENGINE=whisper` かつ `TTS_ENGINE=miotts` または `gptsovits` の場合に必要です。Kokoro TTS のみ使う場合や、VibeVoice のみ使う場合は不要です。
+> **`HF_AUTH_TOKEN` が必要な条件**: `ASR_ENGINE=whisper` かつ `TTS_ENGINE=miotts` または `gptsovits` の場合に必要です。`kokoro` と `t5gemma` は不要です。`ASR_ENGINE=vibevoice` の場合も不要です。
 
 ### 5. ASR エンジンのセットアップ
 
@@ -114,7 +114,7 @@ chmod +x scripts/setup_whisper.sh
 
 1. https://huggingface.co/settings/tokens でトークンを作成（`Read` 権限）
 2. 以下の2つのページで**利用規約に同意**する（即時承認されます）
-   - https://huggingface.co/pyannote/speaker-diarization-3.1
+   - https://huggingface.co/pyannote/speaker-diarization-community-1
    - https://huggingface.co/pyannote/segmentation-3.0
 
 #### VibeVoice モードの場合（`ASR_ENGINE=vibevoice`）
@@ -148,6 +148,14 @@ uv sync
 cd ..
 ```
 
+#### T5Gemma-TTS の場合（`TTS_ENGINE=t5gemma`）— ボイスクローン + 再生時間制御
+
+サーバー起動は不要です。初回実行時にモデル本体と音声コーデックが自動ダウンロードされます。
+
+> **重要**: 24GB メモリの Mac で動かせますが、初回ロードは重いです。ブラウザや動画編集ソフトなど、重いアプリは閉じてください。
+
+> **補足**: デフォルトでは `T5GEMMA_CPU_CODEC=true` なので、XCodec2 は CPU 側へ逃がしてメモリ使用量を抑えます。
+
 #### GPT-SoVITS の場合（`TTS_ENGINE=gptsovits`）
 
 conda と GPT-SoVITS のセットアップが必要です。
@@ -168,9 +176,9 @@ chmod +x scripts/setup_gptsovits.sh
 
 > **推奨**: 長い動画はエラーになることがある。
 
-### 手順2: サーバーを起動する（Kokoro TTS 以外）
+### 手順2: サーバーを起動する（MioTTS / GPT-SoVITS のみ）
 
-**Kokoro TTS の場合**: サーバー起動は不要です。手順3に進んでください。
+**Kokoro TTS / T5Gemma-TTS の場合**: サーバー起動は不要です。手順3に進んでください。
 
 **MioTTS / GPT-SoVITS の場合**: 別のターミナルでサーバーを起動します。
 
@@ -202,12 +210,13 @@ uv run ja-dubbing
 
 ### TTS エンジン（音声合成）
 
-| | Kokoro | MioTTS | GPT-SoVITS |
-|---|--------|--------|------------|
-| 手軽さ | ★★★ 一番かんたん | ★★ サーバー起動が必要 | ★ conda 環境が必要 |
-| ボイスクローン | 非対応（固定の声） | 対応（高品質） | 対応（ゼロショット） |
-| 速度 | 高速 | 低速 | 中速 |
-| サーバー | 不要 | Ollama + MioTTS API | conda + API サーバー |
+| | Kokoro | MioTTS | GPT-SoVITS | T5Gemma-TTS |
+|---|--------|--------|------------|--------------|
+| 手軽さ | ★★★ 一番かんたん | ★★ サーバー起動が必要 | ★ conda 環境が必要 | ★★★ サーバー不要 |
+| ボイスクローン | 非対応（固定の声） | 対応（高品質） | 対応（ゼロショット） | 対応（ゼロショット） |
+| 再生時間制御 | 非対応 | 非対応 | 非対応 | 対応 |
+| 速度 | 高速 | 低速 | 中速 | 低速 |
+| サーバー | 不要 | Ollama + MioTTS API | conda + API サーバー | 不要 |
 
 **迷ったら**: まずは `ASR_ENGINE=whisper` + `TTS_ENGINE=kokoro` の組み合わせで試してみてください。セットアップが最も簡単で、HuggingFace トークンも不要です。
 
@@ -223,7 +232,7 @@ uv run ja-dubbing
 |------|-----------|------|
 | `VIDEO_FOLDER` | `./input_videos` | 入力動画フォルダ |
 | `ASR_ENGINE` | `whisper` | 音声認識エンジン（`whisper` / `vibevoice`） |
-| `TTS_ENGINE` | `miotts` | 音声合成エンジン（`kokoro` / `miotts` / `gptsovits`） |
+| `TTS_ENGINE` | `miotts` | 音声合成エンジン（`kokoro` / `miotts` / `gptsovits` / `t5gemma`） |
 | `HF_AUTH_TOKEN` | — | HuggingFace トークン（条件付きで必要） |
 
 ### 出力設定
@@ -277,7 +286,7 @@ uv run ja-dubbing
 | `MIOTTS_LLM_TEMPERATURE` | `0.5` | 温度（低いほど安定、0.1〜0.8） |
 | `MIOTTS_LLM_REPETITION_PENALTY` | `1.1` | 繰り返し抑制（1.0〜1.3 推奨） |
 | `MIOTTS_LLM_FREQUENCY_PENALTY` | `0.3` | 高頻度トークン抑制（0.0〜1.0） |
-| `MIOTTS_QUALITY_RETRIES` | `1` | 品質バリデーション失敗時のリトライ回数 |
+| `MIOTTS_QUALITY_RETRIES` | `2` | 品質バリデーション失敗時のリトライ回数 |
 | `MIOTTS_DURATION_PER_CHAR_MAX` | `0.5` | 1文字あたり秒数の上限 |
 
 ### GPT-SoVITS 設定（`TTS_ENGINE=gptsovits`）
@@ -289,6 +298,19 @@ uv run ja-dubbing
 | `GPTSOVITS_DIR` | `./GPT-SoVITS` | インストール先ディレクトリ |
 | `GPTSOVITS_SPEED_FACTOR` | `1.0` | 読み上げ速度 |
 | `GPTSOVITS_REFERENCE_TARGET_SEC` | `5.0` | 参照音声の目標秒数 |
+
+### T5Gemma-TTS 設定（`TTS_ENGINE=t5gemma`）
+
+| 設定 | デフォルト | 説明 |
+|------|-----------|------|
+| `T5GEMMA_MODEL_DIR` | `Aratako/T5Gemma-TTS-2b-2b` | モデルの HuggingFace リポジトリ |
+| `T5GEMMA_XCODEC2_MODEL` | `NandemoGHS/Anime-XCodec2-44.1kHz-v2` | 音声コーデックのリポジトリ |
+| `T5GEMMA_DURATION_SCALE` | `1.15` | 元セグメント長に掛ける倍率 |
+| `T5GEMMA_CPU_CODEC` | `true` | XCodec2 を CPU に逃がしてメモリを節約する |
+| `T5GEMMA_DURATION_TOLERANCE` | `0.5` | 生成音声長の許容ずれ率 |
+| `T5GEMMA_QUALITY_RETRIES` | `2` | 品質再生成の回数 |
+
+`T5Gemma-TTS` は、翻訳前に得た英語文字起こし (`text_en`) をそのまま Reference Text として使います。参照音声の再文字起こしはしません。
 
 ---
 
@@ -304,4 +326,4 @@ uv run ja-dubbing
 
 MIT License
 
-本ツールが使用する外部モデル・ライブラリ（MioTTS、CAT-Translate-7b、pyannote.audio、whisper.cpp、Kokoro TTS、GPT-SoVITS など）にはそれぞれ固有のライセンスがあります。利用の際はご確認ください。
+本ツールが使用する外部モデル・ライブラリ（MioTTS、CAT-Translate-7b、pyannote.audio、whisper.cpp、Kokoro TTS、GPT-SoVITS、T5Gemma-TTS など）にはそれぞれ固有のライセンスがあります。利用の際はご確認ください。
