@@ -56,7 +56,7 @@ from ja_dubbing.translation.cat_translate import (
     CatTranslateClient,
     translate_segments_resumable,
 )
-from ja_dubbing.tts.omnivoice_tts import (
+from ja_dubbing.omnivoice_tts import (
     load_tts_meta,
     save_tts_meta_atomic,
 )
@@ -650,7 +650,7 @@ def _run_tts_omnivoice(
     ref_cache: SpeakerReferenceCache,
 ) -> None:
     """OmniVoice でボイスクローン日本語音声を生成する。"""
-    from ja_dubbing.tts.omnivoice_tts import (
+    from ja_dubbing.omnivoice_tts import (
         generate_segment_tts_omnivoice,
         release_omnivoice_model,
     )
