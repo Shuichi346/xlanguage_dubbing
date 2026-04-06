@@ -9,9 +9,6 @@ Thumbs.db
 dist/
 build/
 .venv/
-MioTTS-Inference/
-GPT-SoVITS/
-T5Gemma-TTS/
 start_servers.sh
 whisper.cpp/
 uv.lock

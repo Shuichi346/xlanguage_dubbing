@@ -35,29 +35,19 @@ def preflight_checks() -> None:
 
     tts_engine = TTS_ENGINE.strip().lower()
 
-    # MioTTS 使用時はサーバーチェック
-    if tts_engine == "miotts":
-        from ja_dubbing.servers.health import preflight_server_checks
-        preflight_server_checks()
-
     # Kokoro TTS 使用時は unidic 辞書の存在を確認する
     if tts_engine == "kokoro":
         from ja_dubbing.tts.kokoro_tts import ensure_unidic_downloaded
         ensure_unidic_downloaded()
 
-    # GPT-SoVITS 使用時は API サーバーチェック
-    if tts_engine == "gptsovits":
-        from ja_dubbing.servers.health import preflight_server_checks
-        preflight_server_checks()
-
-    if tts_engine == "t5gemma":
+    if tts_engine == "omnivoice":
         try:
             import torch
 
             if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-                print_step("  T5Gemma-TTS 推論デバイス: mps")
+                print_step("  OmniVoice 推論デバイス: mps")
             else:
-                print_step("  T5Gemma-TTS 推論デバイス: cpu")
+                print_step("  OmniVoice 推論デバイス: cpu")
         except ImportError as exc:
             raise PipelineError(
                 "torch がインストールされていません。\n"

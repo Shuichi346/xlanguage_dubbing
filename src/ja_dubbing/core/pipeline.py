@@ -2,9 +2,8 @@
 """
 メイン処理フロー。
 1つの動画を英語→日本語吹き替え動画に変換する。
-TTS エンジンとして MioTTS（話者クローン対応）、Kokoro（高速・クローン非対応）、
-GPT-SoVITS（V2ProPlus ゼロショットボイスクローン）、
-T5Gemma-TTS（ゼロショットボイスクローン + 再生時間制御）を選択可能。
+TTS エンジンとして OmniVoice（ゼロショットボイスクローン + 再生時間制御）、
+Kokoro（高速・クローン非対応）を選択可能。
 翻訳エンジンは CAT-Translate-7b (GGUF, llama-cpp-python) を使用する。
 """
 
@@ -57,7 +56,7 @@ from ja_dubbing.translation.cat_translate import (
     CatTranslateClient,
     translate_segments_resumable,
 )
-from ja_dubbing.tts.miotts import (
+from ja_dubbing.tts.omnivoice_tts import (
     load_tts_meta,
     save_tts_meta_atomic,
 )
@@ -79,7 +78,7 @@ def _get_tts_engine() -> str:
 def _needs_speaker_diarization(tts_engine: str) -> bool:
     """話者分離が必要かどうかを判定する。"""
     # Kokoro はクローン非対応なので話者分離不要
-    # MioTTS / GPT-SoVITS / T5Gemma-TTS は話者クローンのため話者分離が必要
+    # OmniVoice は話者クローンのため話者分離が必要
     return tts_engine != "kokoro"
 
 
@@ -217,7 +216,9 @@ def process_one_video(
                 print_step("4. Whisperセグメントに話者ID割り当て")
                 segments_with_speaker = assign_speakers(segments_raw, diarization)
                 speaker_ids = {s.speaker_id for s in segments_with_speaker}
-                print_step(f"   話者数: {len(speaker_ids)}, ID: {sorted(speaker_ids)}")
+                print_step(
+                    f"   話者数: {len(speaker_ids)}, ID: {sorted(speaker_ids)}"
+                )
 
                 release_pipeline()
                 force_memory_cleanup()
@@ -281,53 +282,28 @@ def process_one_video(
         raise PipelineError("segments_en が空です。")
 
     # ===== 6. 話者リファレンス音声生成 =====
-    if tts_engine == "miotts":
-        if diarization is not None:
-            print_step("6. 話者ごとの代表リファレンス音声を抽出（MioTTS）")
-            ref_cache.build_references(video_path, diarization)
-        else:
-            _reload_cached_references(ref_cache, segments_en)
-
-        print_step("6.5. セグメント単位のリファレンス音声を抽出（感情・テンポ対応）")
-        ref_cache.build_segment_references(video_path, segments_en)
-
-    elif tts_engine == "gptsovits":
+    if tts_engine == "omnivoice":
         if diarization is not None:
             print_step(
-                "6. GPT-SoVITS 用の話者代表リファレンス音声を抽出"
-                "（3〜10秒、声質のみ）"
-            )
-            ref_cache.build_gptsovits_references(
-                video_path, diarization
-            )
-        else:
-            _reload_cached_references(ref_cache, segments_en)
-
-        print_step(
-            "6.5. セグメント単位リファレンス: 不要"
-            "（GPT-SoVITS は声質のみ抽出のため話者代表を使い回す）"
-        )
-
-    elif tts_engine == "t5gemma":
-        if diarization is not None:
-            print_step(
-                "6. T5Gemma-TTS 用の話者代表リファレンス音声を抽出"
+                "6. OmniVoice 用の話者代表リファレンス音声を抽出"
                 "（3〜15秒、ボイスクローン用）"
             )
-            ref_cache.build_t5gemma_references(
+            ref_cache.build_omnivoice_references(
                 video_path, diarization, segments_en
             )
         else:
             _reload_cached_references(ref_cache, segments_en)
 
         print_step(
-            "6.5. T5Gemma-TTS セグメント単位リファレンス音声を抽出"
+            "6.5. OmniVoice セグメント単位リファレンス音声を抽出"
             "（ASR 再文字起こしで音声・テキスト一致を保証）"
         )
-        ref_cache.build_t5gemma_segment_references(video_path, segments_en)
+        ref_cache.build_omnivoice_segment_references(video_path, segments_en)
 
     else:
-        print_step("6. リファレンス音声抽出: Kokoro TTS（クローン非対応）のため省略")
+        print_step(
+            "6. リファレンス音声抽出: Kokoro TTS（クローン非対応）のため省略"
+        )
 
     # ===== 7. 翻訳 =====
     print_step("7. CAT-Translate-7b (GGUF, llama-cpp-python) で翻訳（再開対応）")
@@ -349,16 +325,10 @@ def process_one_video(
     # ===== 8. TTS =====
     if tts_engine == "kokoro":
         _run_tts_kokoro(segments_enja, seg_audio_dir, work_dir, progress)
-    elif tts_engine == "gptsovits":
-        _run_tts_gptsovits(
-            segments_enja, seg_audio_dir, work_dir, progress, ref_cache
-        )
-    elif tts_engine == "t5gemma":
-        _run_tts_t5gemma(
-            segments_enja, seg_audio_dir, work_dir, progress, ref_cache
-        )
     else:
-        _run_tts_miotts(segments_enja, seg_audio_dir, work_dir, progress, ref_cache)
+        _run_tts_omnivoice(
+            segments_enja, seg_audio_dir, work_dir, progress, ref_cache
+        )
 
     force_memory_cleanup()
 
@@ -672,69 +642,33 @@ def _run_tts_kokoro(
     )
 
 
-def _run_tts_gptsovits(
+def _run_tts_omnivoice(
     segments_enja: list,
     seg_audio_dir: Path,
     work_dir: Path,
     progress,
     ref_cache: SpeakerReferenceCache,
 ) -> None:
-    """GPT-SoVITS でゼロショットボイスクローン日本語音声を生成する。"""
-    from ja_dubbing.tts.gptsovits import generate_segment_tts_gptsovits
-
-    print_step(
-        "8. GPT-SoVITS V2ProPlus でゼロショットボイスクローン日本語音声生成"
-        "（話者代表リファレンス使用）"
-    )
-
-    def _build_segment_label(segno: int, total: int, seg: object) -> str:
-        return (
-            f"  TTS seg {segno}/{total}: {seg.start:.3f}-{seg.end:.3f} "
-            f"speaker={seg.speaker_id} (GPT-SoVITS)"
-        )
-
-    def _generate(seg: object, out_audio_stub: Path, segno: int) -> TtsMeta | None:
-        return generate_segment_tts_gptsovits(
-            seg, out_audio_stub, ref_cache, segno=segno
-        )
-
-    _run_tts_loop(
-        segments_enja=segments_enja,
-        seg_audio_dir=seg_audio_dir,
-        work_dir=work_dir,
-        progress=progress,
-        segment_label_builder=_build_segment_label,
-        generator=_generate,
-    )
-
-
-def _run_tts_t5gemma(
-    segments_enja: list,
-    seg_audio_dir: Path,
-    work_dir: Path,
-    progress,
-    ref_cache: SpeakerReferenceCache,
-) -> None:
-    """T5Gemma-TTS でボイスクローン日本語音声を生成する。"""
-    from ja_dubbing.tts.t5gemma_tts import (
-        generate_segment_tts_t5gemma,
-        release_t5gemma_model,
+    """OmniVoice でボイスクローン日本語音声を生成する。"""
+    from ja_dubbing.tts.omnivoice_tts import (
+        generate_segment_tts_omnivoice,
+        release_omnivoice_model,
     )
 
     print_step(
-        "8. T5Gemma-TTS でボイスクローン日本語音声生成"
+        "8. OmniVoice でボイスクローン日本語音声生成"
         "（セグメント単位リファレンス優先、再生時間制御あり）"
     )
 
     try:
         def _build_segment_label(segno: int, total: int, seg: object) -> str:
             has_seg_ref = (
-                ref_cache.get_t5gemma_segment_reference_path(segno) is not None
+                ref_cache.get_omnivoice_segment_reference_path(segno) is not None
             )
             ref_type = "セグメント単位" if has_seg_ref else "話者代表"
             return (
                 f"  TTS seg {segno}/{total}: {seg.start:.3f}-{seg.end:.3f} "
-                f"speaker={seg.speaker_id} ref={ref_type} (T5Gemma)"
+                f"speaker={seg.speaker_id} ref={ref_type} (OmniVoice)"
             )
 
         def _generate(
@@ -742,7 +676,7 @@ def _run_tts_t5gemma(
             out_audio_stub: Path,
             segno: int,
         ) -> TtsMeta | None:
-            return generate_segment_tts_t5gemma(
+            return generate_segment_tts_omnivoice(
                 seg, out_audio_stub, ref_cache, segno=segno
             )
 
@@ -755,40 +689,7 @@ def _run_tts_t5gemma(
             generator=_generate,
         )
     finally:
-        release_t5gemma_model()
-
-
-def _run_tts_miotts(
-    segments_enja: list,
-    seg_audio_dir: Path,
-    work_dir: Path,
-    progress,
-    ref_cache: SpeakerReferenceCache,
-) -> None:
-    """MioTTS で話者クローン日本語音声を生成する。"""
-    from ja_dubbing.tts.miotts import generate_segment_tts
-
-    print_step("8. MioTTS で話者クローン日本語音声生成（セグメント単位リファレンス優先）")
-
-    def _build_segment_label(segno: int, total: int, seg: object) -> str:
-        has_seg_ref = ref_cache.get_segment_reference_path(segno) is not None
-        ref_type = "セグメント単位" if has_seg_ref else "話者代表"
-        return (
-            f"  TTS seg {segno}/{total}: {seg.start:.3f}-{seg.end:.3f} "
-            f"speaker={seg.speaker_id} ref={ref_type}"
-        )
-
-    def _generate(seg: object, out_audio_stub: Path, segno: int) -> TtsMeta | None:
-        return generate_segment_tts(seg, out_audio_stub, ref_cache, segno=segno)
-
-    _run_tts_loop(
-        segments_enja=segments_enja,
-        seg_audio_dir=seg_audio_dir,
-        work_dir=work_dir,
-        progress=progress,
-        segment_label_builder=_build_segment_label,
-        generator=_generate,
-    )
+        release_omnivoice_model()
 
 
 def _reload_cached_references(
@@ -798,5 +699,4 @@ def _reload_cached_references(
     """再開時にキャッシュ済みリファレンスを検出してロードする。"""
     speaker_ids = {s.speaker_id for s in segments if s.speaker_id}
     ref_cache.reload_speaker_references(speaker_ids)
-    ref_cache.reload_segment_references(len(segments))
-    ref_cache.reload_t5gemma_segment_references(len(segments))
+    ref_cache.reload_omnivoice_segment_references(len(segments))
