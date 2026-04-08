@@ -28,6 +28,12 @@
 - Automatically adjust video speed for natural dubbing
 - Resume from where it left off even if processing stops midway
 
+### Demo mov
+
+<a href="https://www.youtube.com/watch?v=amYVIorgOQQ">
+  <img src="https://img.youtube.com/vi/amYVIorgOQQ/0.jpg" width="250" alt="動画タイトル">
+</a>
+
 ---
 
 ## Table of Contents
