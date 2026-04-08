@@ -28,6 +28,12 @@
 - 自然な吹き替えのための動画速度の自動調整
 - 処理が途中で止まっても続きから再開
 
+### デモ動画
+
+<a href="https://www.youtube.com/watch?v=amYVIorgOQQ">
+  <img src="https://img.youtube.com/vi/amYVIorgOQQ/0.jpg" width="250" alt="動画タイトル">
+</a>
+
 ---
 
 ## 目次
