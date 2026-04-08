@@ -82,9 +82,7 @@ class SpeakerReferenceCache:
             ov_wav = self._cache_dir / f"ovref_{speaker_id}.wav"
             if ov_wav.exists():
                 self._omnivoice_refs[speaker_id] = ov_wav
-        # OmniVoice プロンプトメタデータを読み込む
         self._load_omnivoice_prompt_meta()
-        # OmniVoice セグメント単位メタデータを読み込む
         self._load_omnivoice_segment_meta()
 
     def build_omnivoice_references(
@@ -93,7 +91,11 @@ class SpeakerReferenceCache:
         diarization: List[DiarizationSegment],
         segments: List[Segment],
     ) -> None:
-        """OmniVoice 用の話者代表リファレンス音声を生成する。"""
+        """OmniVoice 用の話者代表リファレンス音声を生成する。
+
+        話者代表リファレンスは各話者から1つだけ選ぶ代表音声であり、
+        ASR での再文字起こしを使って参照テキストの精度を高める。
+        """
         from ja_dubbing.asr import transcribe_reference_audio
 
         speakers: Dict[str, List[DiarizationSegment]] = {}
@@ -135,12 +137,11 @@ class SpeakerReferenceCache:
                 self._omnivoice_refs[speaker_id] = out_wav
                 ref_dur = best_seg.end - best_seg.start
 
-                # 参照音声を ASR で直接文字起こしする
+                # 話者代表は1話者1回だけなので ASR 再文字起こしのコストは小さい
                 prompt_text = transcribe_reference_audio(
                     out_wav, language="en",
                 )
                 if not prompt_text:
-                    # ASR 失敗時はセグメントテキストからフォールバック
                     prompt_text = _collect_reference_prompt_text(
                         best_seg, segments
                     )
@@ -171,14 +172,13 @@ class SpeakerReferenceCache:
         video_path: Path,
         segments: List[Segment],
     ) -> None:
-        """
-        OmniVoice 用のセグメント単位リファレンス音声を生成する。
+        """OmniVoice 用のセグメント単位リファレンス音声を生成する。
 
-        各セグメントの元英語音声を切り出し、ASR エンジンで直接文字起こしして
-        参照テキストを生成する。これにより参照音声とテキストの一致を保証する。
+        各セグメントの元英語音声を切り出し、セグメントが既に持っている
+        text_en を参照テキストとして使用する。
+        ステップ2の ASR で文字起こし済みのテキストと時間範囲は対応しているため、
+        セグメントごとの再文字起こしは不要。
         """
-        from ja_dubbing.asr import transcribe_reference_audio
-
         seg_ref_dir = self._cache_dir / "omnivoice_segment_refs"
         ensure_dir(seg_ref_dir)
 
@@ -214,13 +214,8 @@ class SpeakerReferenceCache:
 
             self._omnivoice_segment_refs[segno] = out_wav
 
-            # 切り出した参照音声を ASR で直接文字起こしする
-            prompt_text = transcribe_reference_audio(
-                out_wav, language="en",
-            )
-            if not prompt_text:
-                # ASR 失敗時は元のセグメントの英語テキストをフォールバック
-                prompt_text = normalize_spaces(seg.text_en)
+            # セグメントの英語テキストをそのまま参照テキストとして使用する
+            prompt_text = normalize_spaces(seg.text_en)
 
             self._omnivoice_segment_prompt_texts[segno] = prompt_text
 
@@ -230,7 +225,6 @@ class SpeakerReferenceCache:
                 "ref_end": effective_end,
             }
 
-        # メタデータを保存する（再開用）
         self._save_omnivoice_segment_meta(segment_meta)
 
         generated = len(self._omnivoice_segment_refs)

@@ -14,7 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ja_dubbing.asr import get_asr_engine
-from ja_dubbing.asr.whisper import extract_wav_for_whisper, extract_wav_for_vibevoice
+from ja_dubbing.asr.whisper import extract_wav_for_whisper
 from ja_dubbing.audio.ffmpeg import (
     concat_audio_to_flac,
     concat_ts_files,
@@ -103,15 +103,7 @@ def process_one_video(
     progress.load()
     progress.save()
 
-    # ASR エンジンに応じた WAV ファイル名を決定する
-    asr_engine = get_asr_engine()
-    if asr_engine == "vibevoice":
-        wav_asr = work_dir / "audio_vibevoice_24k.wav"
-    else:
-        wav_asr = work_dir / "audio_whisper_16k.wav"
-
-    # 話者分離（pyannote）用の 16kHz WAV（whisper 用と共用可能）
-    wav_diarize = work_dir / "audio_whisper_16k.wav"
+    wav_whisper = work_dir / "audio_whisper_16k.wav"
 
     seg_json_en = work_dir / "segments_en.json"
     seg_json_enja = work_dir / "segments_en_ja.json"
@@ -120,6 +112,7 @@ def process_one_video(
     seg_audio_dir = work_dir / "seg_audio"
     ensure_dir(seg_audio_dir)
 
+    asr_engine = get_asr_engine()
     print_step(f"ASR エンジン: {asr_engine}")
     print_step(f"TTS エンジン: {tts_engine}")
     if not need_diarization:
@@ -144,20 +137,11 @@ def process_one_video(
         print_step(f"   動画尺: {video_dur:.3f} sec")
 
     # ===== 1. 音声抽出 =====
-    if not wav_asr.exists():
-        if asr_engine == "vibevoice":
-            print_step("1. ffmpegで音声抽出（24kHz mono wav — VibeVoice 用）")
-            extract_wav_for_vibevoice(video_path, wav_asr)
-        else:
-            print_step("1. ffmpegで音声抽出（16kHz mono wav — whisper 用）")
-            extract_wav_for_whisper(video_path, wav_asr)
+    if not wav_whisper.exists():
+        print_step("1. ffmpegで音声抽出（16kHz mono wav）")
+        extract_wav_for_whisper(video_path, wav_whisper)
     else:
         print_step("1. 既存の音声抽出 wav を利用")
-
-    # 話者分離用の 16kHz WAV を必要に応じて別途生成する
-    if need_diarization and asr_engine == "vibevoice" and not wav_diarize.exists():
-        print_step("1.5. 話者分離用に 16kHz mono wav を追加抽出")
-        extract_wav_for_whisper(video_path, wav_diarize)
 
     # ===== 2-5. 文字起こし〜セグメント加工 =====
     if progress.step("asr_done") and seg_json_en.exists():
@@ -176,7 +160,7 @@ def process_one_video(
             )
 
             print_step("2. VibeVoice-ASR で文字起こし（話者分離内蔵）")
-            segments_raw, diarization = vibevoice_transcribe(wav_asr)
+            segments_raw, diarization = vibevoice_transcribe(wav_whisper)
             if not segments_raw:
                 raise PipelineError("VibeVoice-ASR セグメントが空です。")
             print_step(f"   セグメント数: {len(segments_raw)}")
@@ -203,7 +187,7 @@ def process_one_video(
             )
 
             print_step("2. whisper.cpp CLIで文字起こし")
-            segments_raw = whisper_transcribe(wav_asr)
+            segments_raw = whisper_transcribe(wav_whisper)
             if not segments_raw:
                 raise PipelineError("Whisper セグメントが空です。")
             print_step(f"   Whisper rawセグメント数: {len(segments_raw)}")
@@ -222,7 +206,7 @@ def process_one_video(
                 )
 
                 print_step("3. pyannote.audio で話者分離")
-                diarization = run_diarization(wav_diarize)
+                diarization = run_diarization(wav_whisper)
 
                 progress.set_step("diarization_done", True)
                 progress.save()
@@ -309,8 +293,8 @@ def process_one_video(
             _reload_cached_references(ref_cache, segments_en)
 
         print_step(
-            "6.5. OmniVoice セグメント単位リファレンス音声を抽出"
-            "（ASR 再文字起こしで音声・テキスト一致を保証）"
+            "6.5. OmniVoice セグメント単位リファレンス音声を切り出し"
+            "（text_en をそのまま参照テキストとして使用）"
         )
         ref_cache.build_omnivoice_segment_references(video_path, segments_en)
 
