@@ -1,15 +1,15 @@
 <table>
   <thead>
     <tr>
-      <th style="text-align:center"><a href="README_en.md">English</a></th>
-      <th style="text-align:center"><a href="README.md">日本語</a></th>
+      <th style="text-align:center"><a href="README.md">English</a></th>
+      <th style="text-align:center"><a href="README_ja.md">日本語</a></th>
     </tr>
   </thead>
 </table>
 
 <p align="center">
   <h1 align="center">xlanguage-dubbing</h1>
-  <p align="center">多言語動画を他言語吹き替え動画に変換するツールです。<br>高精度な音声クローニングを使って、元の話者の声を再現した吹き替えを作成します。</p>
+  <p align="center">A tool for converting multilingual videos into dubbed videos in other languages.<br>Creates dubbing that reproduces the original speaker's voice using high-precision voice cloning.</p>
 </p>
 
 <p align="center">
@@ -21,94 +21,94 @@
 
 ---
 
-## このツールでできること
+## What this tool can do
 
-- 多言語の動画を入力して他言語の吹き替え動画を出力
-- 高精度音声クローニング（OmniVoice）を使用した元話者の声を模倣した吹き替えの作成
-- 日英・英日翻訳は高精度な CAT-Translate-7b、それ以外は 55 言語対応の TranslateGemma-12b-it を自動選択
-- 自然な吹き替えのための動画速度の自動調整
-- 処理が途中で止まっても続きから再開
+- Input multilingual videos and output dubbed videos in other languages
+- Create dubbing that mimics the original speaker's voice using high-precision voice cloning (OmniVoice)
+- Automatically selects high-precision CAT-Translate-7b for Japanese-English and English-Japanese translation, and TranslateGemma-12b-it supporting 55 languages for other language pairs
+- Automatic video speed adjustment for natural dubbing
+- Resume from where it left off even if processing is interrupted
 
-### デモ動画
+### Demo Video
 
 <a href="https://www.youtube.com/watch?v=amYVIorgOQQ">
-  <img src="https://img.youtube.com/vi/amYVIorgOQQ/0.jpg" width="250" alt="動画タイトル">
+  <img src="https://img.youtube.com/vi/amYVIorgOQQ/0.jpg" width="250" alt="Video Title">
 </a>
 
 ---
 
-## 目次
+## Table of Contents
 
-- [システム要件](#system-requirements)
-- [セットアップ](#setup)
-- [使用方法](#usage)
-- [ASRエンジンの選択](#asr-engines)
-- [言語設定](#language-settings)
-- [設定オプション](#configuration-options)
-- [ライセンス](#license)
-
----
-
-## システム要件
-
-- **Mac（Apple Silicon）** — Mac mini M4（24GB）でテスト済み
-- **Python 3.13以上**
-- Linuxは未テスト
+- [System Requirements](#system-requirements)
+- [Setup](#setup)
+- [Usage](#usage)
+- [ASR Engine Selection](#asr-engines)
+- [Language Settings](#language-settings)
+- [Configuration Options](#configuration-options)
+- [License](#license)
 
 ---
 
-## セットアップ
+## System Requirements
 
-### 1. 必要なツールのインストール
+- **Mac (Apple Silicon)** — Tested on Mac mini M4 (24GB)
+- **Python 3.13 or higher**
+- Linux is untested
+
+---
+
+## Setup
+
+### 1. Install Required Tools
 
 ```bash
 brew install ffmpeg cmake uv
 ```
 
-### 2. リポジトリのダウンロード
+### 2. Download Repository
 
 ```bash
 git clone https://github.com/Shuichi346/xlanguage-dubbing.git
 cd xlanguage-dubbing
 ```
 
-### 3. 依存関係のインストール
+### 3. Install Dependencies
 
 ```bash
 uv sync
 uv run python -m spacy download en_core_web_sm
 ```
 
-### 4. 設定ファイルの作成
+### 4. Create Configuration File
 
 ```bash
 cp .env.example .env
 ```
 
-`.env` を編集して以下を設定してください。
+Edit `.env` to configure the following:
 
-| 項目 | 説明 | 例 |
-|------|------|------|
-| `VIDEO_FOLDER` | 吹き替えする動画のフォルダ | `./input_videos` |
-| `INPUT_LANG` | 元動画の音声言語（`auto` で自動判定） | `auto`, `en`, `ja` |
-| `OUTPUT_LANG` | 出力する吹き替え言語 | `ja`, `en`, `fr` |
-| `ASR_ENGINE` | 音声認識エンジン | `vibevoice`（推奨）, `whisper` |
-| `HF_AUTH_TOKEN` | HuggingFaceトークン（whisper使用時のみ） | `hf_xxxxxxxxxxxx` |
+| Item | Description | Example |
+|------|-------------|---------|
+| `VIDEO_FOLDER` | Folder containing videos to dub | `./input_videos` |
+| `INPUT_LANG` | Audio language of original video (`auto` for auto-detection) | `auto`, `en`, `ja` |
+| `OUTPUT_LANG` | Output dubbing language | `ja`, `en`, `fr` |
+| `ASR_ENGINE` | Speech recognition engine | `vibevoice` (recommended), `whisper` |
+| `HF_AUTH_TOKEN` | HuggingFace token (only when using whisper) | `hf_xxxxxxxxxxxx` |
 
-### 5. ASRエンジンのセットアップ
+### 5. ASR Engine Setup
 
-#### VibeVoiceモード（デフォルト・推奨）
+#### VibeVoice Mode (Default/Recommended)
 
-追加セットアップ不要です。初回実行時にモデルが自動ダウンロードされます。
+No additional setup required. Models will be automatically downloaded on first run.
 
-#### Whisperモード
+#### Whisper Mode
 
 ```bash
 chmod +x scripts/setup_whisper.sh
 ./scripts/setup_whisper.sh
 ```
 
-### 6. 実行
+### 6. Run
 
 ```bash
 uv run xlanguage-dubbing
@@ -116,53 +116,53 @@ uv run xlanguage-dubbing
 
 ---
 
-## ASRエンジンの選択
+## ASR Engine Selection
 
-| | VibeVoice（推奨） | Whisper |
+| | VibeVoice (Recommended) | Whisper |
 |---|---|---|
-| 速度 | 低速 | 高速 |
-| 多言語混在（コードスイッチング） | 対応 | 非対応（1言語のみ） |
-| 追加セットアップ | 不要 | `setup_whisper.sh` 実行が必要 |
-| HuggingFaceトークン | 不要 | 必要 |
+| Speed | Slow | Fast |
+| Multilingual mixing (Code-switching) | Supported | Not supported (single language only) |
+| Additional setup | Not required | Requires running `setup_whisper.sh` |
+| HuggingFace token | Not required | Required |
 
 ---
 
-## 言語設定
+## Language Settings
 
 ### INPUT_LANG
 
-元の動画の音声言語を指定します。`auto` に設定すると ASR エンジンが自動で判定します。VibeVoice-ASR はコードスイッチング対応のため、1つの動画内に複数言語が混在していても問題なく処理できます。
+Specifies the audio language of the original video. When set to `auto`, the ASR engine will automatically detect it. VibeVoice-ASR supports code-switching, so it can handle multiple languages mixed within a single video without any issues.
 
 ### OUTPUT_LANG
 
-出力される吹き替え動画の音声言語を明示的に指定します。ISO 639-1 コード（`en`, `ja`, `fr`, `de`, `zh`, `ko` など）で指定してください。
+Explicitly specifies the audio language of the output dubbed video. Use ISO 639-1 codes (`en`, `ja`, `fr`, `de`, `zh`, `ko`, etc.).
 
-### 翻訳エンジンの自動選択
+### Automatic Translation Engine Selection
 
-入出力言語の組み合わせに応じて、最適な翻訳エンジンが自動的に選択されます。
+The optimal translation engine is automatically selected based on the input-output language combination.
 
-| 言語ペア | 使用エンジン | 備考 |
+| Language Pair | Engine Used | Notes |
 |---|---|---|
-| 英語 → 日本語 | CAT-Translate-7b | 日英特化・高精度 |
-| 日本語 → 英語 | CAT-Translate-7b | 日英特化・高精度 |
-| その他すべて | TranslateGemma-12b-it | 55言語対応 |
+| English → Japanese | CAT-Translate-7b | Japanese-English specialized, high precision |
+| Japanese → English | CAT-Translate-7b | Japanese-English specialized, high precision |
+| All others | TranslateGemma-12b-it | Supports 55 languages |
 
 ---
 
-## 設定オプション
+## Configuration Options
 
-すべての設定は `.env` ファイルで管理されます。詳細は `.env.example` を参照してください。
+All settings are managed in the `.env` file. Refer to `.env.example` for details.
 
 ---
 
-## 再開機能
+## Resume Functionality
 
-処理は各ステップでチェックポイントを保存するため、途中で止まっても `uv run xlanguage-dubbing` を再実行すれば続きから処理できます。
+Processing saves checkpoints at each step, so if it stops midway, you can resume from where it left off by re-running `uv run xlanguage-dubbing`.
 
-**最初からやり直したい場合**: `temp/<動画名>/` フォルダを削除して再実行。
+**To start over from the beginning**: Delete the `temp/<video_name>/` folder and re-run.
 
-## ライセンス
+## License
 
 MIT License
 
-このツールが使用する外部モデルやライブラリはそれぞれ独自のライセンスを持ちます。
+External models and libraries used by this tool have their own respective licenses.
