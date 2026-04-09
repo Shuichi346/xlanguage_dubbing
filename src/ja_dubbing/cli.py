@@ -12,7 +12,7 @@ import multiprocessing
 import sys
 from pathlib import Path
 
-from ja_dubbing.config import TEMP_ROOT, TTS_ENGINE, VIDEO_EXTS, VIDEO_FOLDER
+from ja_dubbing.config import TEMP_ROOT, VIDEO_EXTS, VIDEO_FOLDER
 from ja_dubbing.core.pipeline import process_one_video
 from ja_dubbing.segments.spacy_split import initialize_spacy
 from ja_dubbing.servers.health import generate_start_script
@@ -95,25 +95,18 @@ def preflight_checks() -> None:
     which_or_raise("ffprobe")
     ensure_dir(TEMP_ROOT)
 
-    tts_engine = TTS_ENGINE.strip().lower()
+    try:
+        import torch
 
-    if tts_engine == "kokoro":
-        from ja_dubbing.tts.kokoro_tts import ensure_unidic_downloaded
-        ensure_unidic_downloaded()
-
-    if tts_engine == "omnivoice":
-        try:
-            import torch
-
-            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-                print_step("  OmniVoice 推論デバイス: mps")
-            else:
-                print_step("  OmniVoice 推論デバイス: cpu")
-        except ImportError as exc:
-            raise PipelineError(
-                "torch がインストールされていません。\n"
-                "  uv sync を実行してください。"
-            ) from exc
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            print_step("  OmniVoice 推論デバイス: mps")
+        else:
+            print_step("  OmniVoice 推論デバイス: cpu")
+    except ImportError as exc:
+        raise PipelineError(
+            "torch がインストールされていません。\n"
+            "  uv sync を実行してください。"
+        ) from exc
 
 
 # =========================================================

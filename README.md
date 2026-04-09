@@ -9,11 +9,11 @@
 
 <p align="center">
   <h1 align="center">ja-dubbing</h1>
-  <p align="center">英語動画を日本語吹き替え動画に変換するツールです。<br>高精度な音声クローニングを使って、元の話者の声を再現した吹き替えも作成できます。</p>
+  <p align="center">英語動画を日本語吹き替え動画に変換するツールです。<br>高精度な音声クローニングを使って、元の話者の声を再現した吹き替えを作成します。</p>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-5.0.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-7.0.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/python-3.13%2B-blue" alt="Python">
   <img src="https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-lightgrey" alt="Platform">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
@@ -41,7 +41,7 @@
 - [システム要件](#system-requirements)
 - [セットアップ](#setup)
 - [使用方法](#usage)
-- [エンジンの組み合わせ](#engine-combinations)
+- [ASRエンジンの選択](#asr-engines)
 - [設定オプション](#configuration-options)
 - [トラブルシューティング](#troubleshooting)
 - [ライセンス](#license)
@@ -94,13 +94,12 @@ uv run python -m spacy download en_core_web_sm
 cp .env.example .env
 ```
 
-`.env`をテキストエディタで開いて、**以下の4項目を必ず設定**してください。
+`.env`をテキストエディタで開いて、**以下の項目を必ず設定**してください。
 
 | 項目 | 説明 | 例 |
 |------|-------------|---------|
 | `VIDEO_FOLDER` | 吹き替えする動画が入っているフォルダ | `./input_videos` |
 | `ASR_ENGINE` | 音声認識エンジン | `whisper` または `vibevoice` |
-| `TTS_ENGINE` | 音声合成エンジン | `kokoro` または `omnivoice` |
 | `HF_AUTH_TOKEN` | HuggingFaceトークン（※条件付き） | `hf_xxxxxxxxxxxx` |
 
 > **`HF_AUTH_TOKEN`が必要なとき**: `ASR_ENGINE=whisper`の場合に必要。`ASR_ENGINE=vibevoice`の場合は不要。
@@ -127,21 +126,9 @@ chmod +x scripts/setup_whisper.sh
 
 追加セットアップは不要です。初回実行時にモデル（約5GB）が自動でダウンロードされます。
 
-### 6. TTSエンジンのセットアップ
+### 6. TTS（音声合成）のセットアップ
 
-#### Kokoro TTS（`TTS_ENGINE=kokoro`）— 最も簡単なオプション
-
-サーバーの起動は不要です。以下のコマンドを実行するだけです：
-
-```bash
-uv run python -m unidic download
-```
-
-> **重要**: このステップをスキップすると日本語の発音が正しくなくなります。
-
-#### OmniVoice（`TTS_ENGINE=omnivoice`）— 高精度音声クローニング
-
-現在の音声クローニング音声合成機能は、Kokoro TTSを維持しながら[OmniVoice](https://github.com/k2-fsa/OmniVoice)（[HuggingFace](https://huggingface.co/k2-fsa/OmniVoice)）のみを使用するように合理化されました。これはOmniVoiceが高精度を提供するためです。
+本ツールは [OmniVoice](https://github.com/k2-fsa/OmniVoice)（[HuggingFace](https://huggingface.co/k2-fsa/OmniVoice)）による高精度音声クローニングを使用します。
 
 追加セットアップは不要です。初回実行時にモデルが自動でダウンロードされます。
 
@@ -155,11 +142,7 @@ uv run python -m unidic download
 
 > **推奨**: 長時間の動画はエラーの原因となる場合があります。
 
-### ステップ2: サーバーの起動（不要）
-
-どのTTSエンジンでもサーバーの起動は不要です。ステップ3に進んでください。
-
-### ステップ3: 実行
+### ステップ2: 実行
 
 ```bash
 uv run ja-dubbing
@@ -169,9 +152,7 @@ uv run ja-dubbing
 
 ---
 
-## エンジンの組み合わせ
-
-### ASRエンジン（音声認識）
+## ASRエンジンの選択
 
 | | Whisper | VibeVoice |
 |---|---|---|
@@ -180,16 +161,7 @@ uv run ja-dubbing
 | 追加セットアップ | `setup_whisper.sh`の実行が必要 | 不要（初回実行時に自動ダウンロード） |
 | HuggingFaceトークン | 必要 | 不要 |
 
-### TTSエンジン（音声合成）
-
-| | Kokoro | OmniVoice |
-|---|---|---|
-| 使いやすさ | ★★★ 最も簡単 | ★★★ サーバー不要 |
-| 音声クローニング | 非対応（固定音声） | 対応（高精度） |
-| 速度 | 高速 | 中程度 |
-| サーバー | 不要 | 不要 |
-
-**迷ったら**: まず`ASR_ENGINE=whisper` + `TTS_ENGINE=kokoro`の組み合わせを試してください。最もシンプルなセットアップでHuggingFaceトークンも不要です。
+**迷ったら**: `ASR_ENGINE=whisper` を試してください。高速で精度も十分です。
 
 ---
 
@@ -203,7 +175,6 @@ uv run ja-dubbing
 |---------|---------|-------------|
 | `VIDEO_FOLDER` | `./input_videos` | 入力動画フォルダ |
 | `ASR_ENGINE` | `whisper` | 音声認識エンジン（`whisper` / `vibevoice`） |
-| `TTS_ENGINE` | `kokoro` | 音声合成エンジン（`kokoro` / `omnivoice`） |
 | `HF_AUTH_TOKEN` | — | HuggingFaceトークン（条件付き必須） |
 
 ### 出力設定
@@ -240,21 +211,12 @@ uv run ja-dubbing
 | `CAT_TRANSLATE_N_GPU_LAYERS` | `-1` | GPU オフロード（-1で全レイヤー） |
 | `CAT_TRANSLATE_RETRIES` | `3` | リトライ回数 |
 
-### Kokoro TTS設定（`TTS_ENGINE=kokoro`）
+### OmniVoice設定
 
 | 設定 | デフォルト | 説明 |
 |---------|---------|-------------|
-| `KOKORO_VOICE` | `jf_alpha` | 日本語音声名 |
-| `KOKORO_SPEED` | `1.0` | 話速（0.8-1.2推奨） |
-
-利用可能な音声: `jf_alpha`（女性、推奨）、`jf_gongitsune`（女性）、`jf_nezumi`（女性）、`jf_tebukuro`（女性）、`jm_kumo`（男性）
-
-### OmniVoice設定（`TTS_ENGINE=omnivoice`）
-
-| 設定 | デフォルト | 説明 |
-|---------|---------|-------------|
-| `OMNIVoice_MODEL` | `k2-fsa/OmniVoice` | OmniVoiceモデルリポジトリ |
-| `OMNIVoice_SPEED` | `1.0` | 話速 |
+| `OMNIVOICE_MODEL` | `k2-fsa/OmniVoice` | OmniVoiceモデルリポジトリ |
+| `OMNIVOICE_SPEED` | `1.0` | 話速 |
 
 ---
 
@@ -264,10 +226,8 @@ uv run ja-dubbing
 
 **最初からやり直したい場合**: `temp/<動画名>/`フォルダを削除して再実行。
 
-**異なるエンジンでリトライしたい場合**: 同様に`temp/<動画名>/`フォルダを削除。
-
 ## ライセンス
 
 MIT License
 
-このツールが使用する外部モデルやライブラリ（OmniVoice、CAT-Translate-7b、pyannote.audio、whisper.cpp、Kokoro TTSなど）はそれぞれ独自のライセンスを持ちます。使用時にはそれらもご確認ください。
+このツールが使用する外部モデルやライブラリ（OmniVoice、CAT-Translate-7b、pyannote.audio、whisper.cppなど）はそれぞれ独自のライセンスを持ちます。使用時にはそれらもご確認ください。

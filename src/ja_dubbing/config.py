@@ -123,23 +123,6 @@ CAT_TRANSLATE_RETRY_BACKOFF_SEC = _env_float("CAT_TRANSLATE_RETRY_BACKOFF_SEC", 
 CAT_TRANSLATE_REPEAT_PENALTY = _env_float("CAT_TRANSLATE_REPEAT_PENALTY", 1.2)
 
 # =========================
-# TTSエンジン共通
-# =========================
-
-TTS_ENGINE = _env("TTS_ENGINE", "omnivoice")  # "omnivoice" or "kokoro"
-
-# =========================
-# Kokoro TTS
-# =========================
-
-KOKORO_MODEL = _env("KOKORO_MODEL", "kokoro")
-KOKORO_VOICE = _env("KOKORO_VOICE", "jf_alpha")
-KOKORO_SPEED = _env_float("KOKORO_SPEED", 1.0)
-
-# Kokoro のネイティブサンプリングレート（24kHz 固定）
-KOKORO_SAMPLE_RATE = 24000
-
-# =========================
 # OmniVoice（ボイスクローン + 再生時間制御）
 # =========================
 

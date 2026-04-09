@@ -2,8 +2,7 @@
 """
 メイン処理フロー。
 1つの動画を英語→日本語吹き替え動画に変換する。
-TTS エンジンとして OmniVoice（ゼロショットボイスクローン + 再生時間制御）、
-Kokoro（高速・クローン非対応）を選択可能。
+TTS エンジンとして OmniVoice（ゼロショットボイスクローン + 再生時間制御）を使用する。
 翻訳エンジンは CAT-Translate-7b (GGUF, llama-cpp-python) を使用する。
 """
 
@@ -41,7 +40,6 @@ from ja_dubbing.config import (
     SPACY_UNIT_MAX_SENTENCES,
     SPACY_UNIT_MERGE_MAX_CHARS,
     SPACY_UNIT_MERGE_MAX_GAP_SEC,
-    TTS_ENGINE,
 )
 from ja_dubbing.core.models import TtsMeta
 from ja_dubbing.core.progress import ProgressStore
@@ -70,16 +68,6 @@ from ja_dubbing.utils import (
 )
 
 
-def _get_tts_engine() -> str:
-    """現在選択されている TTS エンジン名を返す。"""
-    return TTS_ENGINE.strip().lower()
-
-
-def _needs_speaker_diarization(tts_engine: str) -> bool:
-    """話者分離が必要かどうかを判定する。"""
-    return tts_engine != "kokoro"
-
-
 def process_one_video(
     video_path: Path,
     client: CatTranslateClient,
@@ -87,9 +75,6 @@ def process_one_video(
 ) -> None:
     """1つの動画を処理する。"""
     print_step(f"=== 開始: {video_path} ===")
-
-    tts_engine = _get_tts_engine()
-    need_diarization = _needs_speaker_diarization(tts_engine)
 
     out_path = video_path.with_name(video_path.stem + OUTPUT_SUFFIX)
     if out_path.exists():
@@ -114,9 +99,7 @@ def process_one_video(
 
     asr_engine = get_asr_engine()
     print_step(f"ASR エンジン: {asr_engine}")
-    print_step(f"TTS エンジン: {tts_engine}")
-    if not need_diarization:
-        print_step("話者分離: 不要（Kokoro TTS はクローン非対応のため）")
+    print_step("TTS エンジン: OmniVoice")
 
     # ===== 0. 動画尺 =====
     print_step("0. 動画尺を取得(ffprobe)")
@@ -172,12 +155,8 @@ def process_one_video(
             progress.set_artifact("asr_srt_en", str(srt_en_path))
             progress.save()
 
-            if need_diarization:
-                print_step("3. 話者分離: VibeVoice-ASR 内蔵のため省略")
-                print_step("4. 話者ID割り当て: VibeVoice-ASR 内蔵のため省略")
-            else:
-                print_step("3. 話者分離: Kokoro TTS のため省略")
-                print_step("4. 話者ID割り当て: Kokoro TTS のため省略")
+            print_step("3. 話者分離: VibeVoice-ASR 内蔵のため省略")
+            print_step("4. 話者ID割り当て: VibeVoice-ASR 内蔵のため省略")
 
             segments_with_speaker = segments_raw
         else:
@@ -198,49 +177,27 @@ def process_one_video(
             progress.set_artifact("asr_srt_en", str(srt_en_path))
             progress.save()
 
-            if need_diarization:
-                from ja_dubbing.diarization.alignment import assign_speakers
-                from ja_dubbing.diarization.speaker import (
-                    release_pipeline,
-                    run_diarization,
-                )
+            from ja_dubbing.diarization.alignment import assign_speakers
+            from ja_dubbing.diarization.speaker import (
+                release_pipeline,
+                run_diarization,
+            )
 
-                print_step("3. pyannote.audio で話者分離")
-                diarization = run_diarization(wav_whisper)
+            print_step("3. pyannote.audio で話者分離")
+            diarization = run_diarization(wav_whisper)
 
-                progress.set_step("diarization_done", True)
-                progress.save()
+            progress.set_step("diarization_done", True)
+            progress.save()
 
-                print_step("4. Whisperセグメントに話者ID割り当て")
-                segments_with_speaker = assign_speakers(segments_raw, diarization)
-                speaker_ids = {s.speaker_id for s in segments_with_speaker}
-                print_step(
-                    f"   話者数: {len(speaker_ids)}, ID: {sorted(speaker_ids)}"
-                )
+            print_step("4. Whisperセグメントに話者ID割り当て")
+            segments_with_speaker = assign_speakers(segments_raw, diarization)
+            speaker_ids = {s.speaker_id for s in segments_with_speaker}
+            print_step(
+                f"   話者数: {len(speaker_ids)}, ID: {sorted(speaker_ids)}"
+            )
 
-                release_pipeline()
-                force_memory_cleanup()
-            else:
-                print_step("3. 話者分離: Kokoro TTS のため省略（pyannote 不使用）")
-                print_step("4. 話者ID割り当て: Kokoro TTS のため省略（統一話者ID）")
-
-                from ja_dubbing.core.models import Segment
-
-                segments_with_speaker = [
-                    Segment(
-                        idx=s.idx,
-                        start=s.start,
-                        end=s.end,
-                        text_en=s.text_en,
-                        text_ja=s.text_ja,
-                        speaker_id="KOKORO",
-                    )
-                    for s in segments_raw
-                ]
-                diarization = None
-
-                progress.set_step("diarization_done", True)
-                progress.save()
+            release_pipeline()
+            force_memory_cleanup()
 
         # 5. セグメント加工（結合 → spaCy文分割 → 翻訳ユニット結合）
         print_step(
@@ -280,28 +237,22 @@ def process_one_video(
         raise PipelineError("segments_en が空です。")
 
     # ===== 6. 話者リファレンス音声生成 =====
-    if tts_engine == "omnivoice":
-        if diarization is not None:
-            print_step(
-                "6. OmniVoice 用の話者代表リファレンス音声を抽出"
-                "（3〜15秒、ボイスクローン用）"
-            )
-            ref_cache.build_omnivoice_references(
-                video_path, diarization, segments_en
-            )
-        else:
-            _reload_cached_references(ref_cache, segments_en)
-
+    if diarization is not None:
         print_step(
-            "6.5. OmniVoice セグメント単位リファレンス音声を切り出し"
-            "（text_en をそのまま参照テキストとして使用）"
+            "6. OmniVoice 用の話者代表リファレンス音声を抽出"
+            "（3〜15秒、ボイスクローン用）"
         )
-        ref_cache.build_omnivoice_segment_references(video_path, segments_en)
-
+        ref_cache.build_omnivoice_references(
+            video_path, diarization, segments_en
+        )
     else:
-        print_step(
-            "6. リファレンス音声抽出: Kokoro TTS（クローン非対応）のため省略"
-        )
+        _reload_cached_references(ref_cache, segments_en)
+
+    print_step(
+        "6.5. OmniVoice セグメント単位リファレンス音声を切り出し"
+        "（text_en をそのまま参照テキストとして使用）"
+    )
+    ref_cache.build_omnivoice_segment_references(video_path, segments_en)
 
     # ===== 7. 翻訳 =====
     print_step("7. CAT-Translate-7b (GGUF, llama-cpp-python) で翻訳（再開対応）")
@@ -321,12 +272,9 @@ def process_one_video(
         )
 
     # ===== 8. TTS =====
-    if tts_engine == "kokoro":
-        _run_tts_kokoro(segments_enja, seg_audio_dir, work_dir, progress)
-    else:
-        _run_tts_omnivoice(
-            segments_enja, seg_audio_dir, work_dir, progress, ref_cache
-        )
+    _run_tts_omnivoice(
+        segments_enja, seg_audio_dir, work_dir, progress, ref_cache
+    )
 
     force_memory_cleanup()
 
@@ -540,7 +488,7 @@ def _run_tts_loop(
     segment_label_builder: Callable[[int, int, object], str],
     generator: Callable[[object, Path, int], TtsMeta | None],
 ) -> None:
-    """各TTSエンジン共通のセグメント処理ループ。"""
+    """TTSセグメント処理ループ。"""
     tts_meta_path = work_dir / "tts_meta.json"
     tts_meta = load_tts_meta(tts_meta_path)
 
@@ -610,33 +558,6 @@ def _run_tts_loop(
         total=total,
         tts_meta_path=tts_meta_path,
         save_artifact=True,
-    )
-
-
-def _run_tts_kokoro(
-    segments_enja: list,
-    seg_audio_dir: Path,
-    work_dir: Path,
-    progress,
-) -> None:
-    """Kokoro TTS でセグメントの日本語音声を生成する。"""
-    from ja_dubbing.tts.kokoro_tts import generate_segment_tts_kokoro
-
-    print_step("8. Kokoro TTS で日本語音声生成（高速・クローン非対応）")
-
-    def _build_segment_label(segno: int, total: int, seg: object) -> str:
-        return f"  TTS seg {segno}/{total}: {seg.start:.3f}-{seg.end:.3f} (Kokoro)"
-
-    def _generate(seg: object, out_audio_stub: Path, segno: int) -> TtsMeta | None:
-        return generate_segment_tts_kokoro(seg, out_audio_stub, segno=segno)
-
-    _run_tts_loop(
-        segments_enja=segments_enja,
-        seg_audio_dir=seg_audio_dir,
-        work_dir=work_dir,
-        progress=progress,
-        segment_label_builder=_build_segment_label,
-        generator=_generate,
     )
 
 
