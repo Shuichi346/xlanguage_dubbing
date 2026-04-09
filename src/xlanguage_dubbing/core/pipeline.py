@@ -57,6 +57,7 @@ from xlanguage_dubbing.segments.spacy_split import (
 )
 from xlanguage_dubbing.translation.cat_translate import (
     CatTranslateClient,
+    release_all_translation_models,
     translate_segments_resumable,
 )
 from xlanguage_dubbing.omnivoice_tts import (
@@ -168,7 +169,6 @@ def process_one_video(
             release_vibevoice_model()
             force_memory_cleanup()
 
-            # VibeVoice-ASR は言語コードを出力しないので、テキストから検出する
             detected_lang = detect_segments_language(segments_raw, INPUT_LANG)
             progress.set_artifact("detected_lang", detected_lang)
 
@@ -192,7 +192,6 @@ def process_one_video(
                 raise PipelineError("Whisper セグメントが空です。")
             print_step(f"   Whisper rawセグメント数: {len(segments_raw)}")
 
-            # whisper.cpp が検出した言語を使用する
             if whisper_detected_lang:
                 detected_lang = whisper_detected_lang
             else:
@@ -302,6 +301,11 @@ def process_one_video(
             client, segments_src, seg_json_translated, progress,
             detected_lang=detected_lang,
         )
+
+    # 翻訳完了後、TTS 前に翻訳モデルを解放してメモリを確保する
+    print_step("7.5. 翻訳モデルを解放（TTS 用メモリ確保）")
+    release_all_translation_models()
+    force_memory_cleanup()
 
     # ===== 8. TTS =====
     _run_tts_omnivoice(
@@ -580,6 +584,7 @@ def _run_tts_omnivoice(
         )
     finally:
         release_omnivoice_model()
+        force_memory_cleanup()
 
 
 def _reload_cached_references(ref_cache, segments):

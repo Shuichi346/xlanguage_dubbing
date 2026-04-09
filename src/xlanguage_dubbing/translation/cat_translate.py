@@ -143,6 +143,22 @@ def _ensure_engine(engine_name: str) -> None:
     _CURRENT_ENGINE = engine_name
 
 
+def release_all_translation_models() -> None:
+    """全翻訳モデルを解放する。TTS 開始前などに呼び出す。"""
+    global _CURRENT_ENGINE
+    _release_cat_model()
+
+    try:
+        from xlanguage_dubbing.translation.translategemma import release_gemma_model
+        release_gemma_model()
+    except ImportError:
+        pass
+
+    _CURRENT_ENGINE = ""
+    force_memory_cleanup()
+    print_step("  全翻訳モデルを解放しました")
+
+
 # =========================================================
 # 翻訳異常検出
 # =========================================================
