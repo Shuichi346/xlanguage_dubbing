@@ -52,6 +52,11 @@ class CatTranslateError(Exception):
     """翻訳エラー。"""
 
 
+# 翻訳失敗時のプレースホルダーテキスト
+_TRANSLATION_ERROR_MARKER = "翻訳エラー"
+_REPETITIVE_INPUT_MARKER = "（繰り返し音声）"
+_REPETITIVE_PART_MARKER = "繰り返し音声エラー"
+
 # CAT-Translate モデルの遅延ロード用グローバルキャッシュ
 _CAT_MODEL = None
 # 現在ロード中のエンジン名
@@ -198,6 +203,16 @@ def is_translation_glitch(text: str) -> bool:
     return _detect_repeated_phrases(text)
 
 
+def _is_translation_error_placeholder(text: str) -> bool:
+    """テキストが翻訳エラーのプレースホルダーかどうかを判定する。"""
+    t = (text or "").strip()
+    return t in (
+        _TRANSLATION_ERROR_MARKER,
+        _REPETITIVE_INPUT_MARKER,
+        _REPETITIVE_PART_MARKER,
+    )
+
+
 def _is_repetitive_input(text: str) -> bool:
     """入力テキストが繰り返しで翻訳不要かを判定する。"""
     t = (text or "").strip()
@@ -226,48 +241,90 @@ def _is_repetitive_input(text: str) -> bool:
 
 
 # =========================================================
+# CAT-Translate プロンプト構築
+# =========================================================
+
+
+def _build_cat_translate_prompt(text: str, source_lang: str, target_lang: str) -> str:
+    """CAT-Translate-7b の ChatML チャットテンプレートに準拠したプロンプトを手動構築する。
+
+    CAT-Translate-7b は sarashina ベースの独自モデルで、ChatML 形式
+    （<|im_start|> / <|im_end|>）のチャットテンプレートを使用する。
+    llama-cpp-python の create_chat_completion() では GGUF 内のテンプレート
+    メタデータが正しく認識されない場合があるため、プロンプトを直接構築して
+    completion API で推論する。
+
+    テンプレート（cyberagent/CAT-Translate-7b tokenizer_config.json より）:
+        <s><|im_start|>system
+        You are a helpful assistant.<|im_end|>
+        <|im_start|>user
+        {content}<|im_end|>
+        <|im_start|>assistant
+
+    公式の使用例（HuggingFace model card より）:
+        prompt = "Translate the following {src_lang} text into {tgt_lang}.\\n\\n{src_text}"
+    """
+    src = normalize_lang_code(source_lang)
+    tgt = normalize_lang_code(target_lang)
+
+    if src == "en" and tgt == "ja":
+        user_content = (
+            f"Translate the following English text into Japanese.\n\n{text.strip()}"
+        )
+    elif src == "ja" and tgt == "en":
+        user_content = (
+            f"Translate the following Japanese text into English.\n\n{text.strip()}"
+        )
+    else:
+        # フォールバック（通常は日英ペア以外では呼ばれない）
+        user_content = (
+            f"Translate the following text.\n\n{text.strip()}"
+        )
+
+    prompt = (
+        "<s><|im_start|>system\n"
+        "You are a helpful assistant.<|im_end|>\n"
+        "<|im_start|>user\n"
+        f"{user_content}<|im_end|>\n"
+        "<|im_start|>assistant\n"
+    )
+    return prompt
+
+
+# =========================================================
 # 統合翻訳実行
 # =========================================================
 
 
 def _translate_with_cat(text: str, source_lang: str, target_lang: str) -> str:
-    """CAT-Translate で日英翻訳する。"""
+    """CAT-Translate で日英翻訳する。
+
+    ChatML チャットテンプレートを手動で構築し、completion API で直接推論する。
+    create_chat_completion() を使わないことで、GGUF 内のテンプレートメタデータの
+    認識問題を回避する。
+    """
     _ensure_engine("cat_translate")
     model = _get_cat_model()
 
-    src = normalize_lang_code(source_lang)
-    tgt = normalize_lang_code(target_lang)
+    prompt = _build_cat_translate_prompt(text, source_lang, target_lang)
 
-    if src == "en" and tgt == "ja":
-        prompt_content = (
-            f"Translate the following English text into Japanese.\n\n{text}"
-        )
-    elif src == "ja" and tgt == "en":
-        prompt_content = (
-            f"Translate the following Japanese text into English.\n\n{text}"
-        )
-    else:
-        prompt_content = (
-            f"Translate the following text.\n\n{text}"
-        )
-
-    messages = [
-        {"role": "user", "content": prompt_content},
-    ]
-
-    response = model.create_chat_completion(
-        messages=messages,
+    response = model(
+        prompt,
         max_tokens=CAT_TRANSLATE_N_CTX // 2,
         temperature=0.0,
         top_p=1.0,
         repeat_penalty=CAT_TRANSLATE_REPEAT_PENALTY,
+        stop=["<|im_end|>", "<|im_start|>"],
+        echo=False,
     )
 
     choices = response.get("choices", [])
     if not choices:
         return ""
 
-    result = choices[0].get("message", {}).get("content", "")
+    result = choices[0].get("text", "")
+    # 制御トークンの残留を除去する
+    result = result.replace("<|im_end|>", "").replace("<|im_start|>", "")
     return result.strip()
 
 
@@ -373,7 +430,7 @@ def translate_segment_safely(
 
     if _is_repetitive_input(t):
         print_step("    繰り返し入力を検出 → スキップ")
-        return "（繰り返し音声）"
+        return _REPETITIVE_INPUT_MARKER
 
     if len(t) <= 2000:
         out, _ = client.translate(
@@ -381,7 +438,7 @@ def translate_segment_safely(
         )
         tgt = out.strip()
         if is_translation_glitch(tgt):
-            return "翻訳エラー"
+            return _TRANSLATION_ERROR_MARKER
         return tgt
 
     parts = re.split(r"(?<=[\.\!\?])\s+", t)
@@ -391,20 +448,20 @@ def translate_segment_safely(
         if not p:
             continue
         if _is_repetitive_input(p):
-            outs.append("繰り返し音声エラー")
+            outs.append(_REPETITIVE_PART_MARKER)
             continue
         out, _ = client.translate(
             p, source_lang=source_lang, target_lang=target_lang
         )
         tgt = out.strip()
         if is_translation_glitch(tgt):
-            outs.append("翻訳エラー")
+            outs.append(_TRANSLATION_ERROR_MARKER)
         else:
             outs.append(tgt)
 
     joined = " ".join([o for o in outs if o])
     if is_translation_glitch(joined):
-        return "翻訳エラー"
+        return _TRANSLATION_ERROR_MARKER
     return joined
 
 
@@ -419,6 +476,8 @@ def translate_segments_resumable(
 
     各セグメントの detected_lang を翻訳の source_lang として使用する。
     detected_lang が空の場合はセグメントのテキストから自動検出する。
+
+    以前の実行で「翻訳エラー」となったセグメントは再翻訳を試みる。
     """
     target_lang = normalize_lang_code(OUTPUT_LANG)
 
@@ -438,16 +497,16 @@ def translate_segments_resumable(
     prev_engine = ""
 
     for segno, seg in enumerate(segments, start=1):
-        if (seg.text_tgt or "").strip():
-            if is_translation_glitch(seg.text_tgt):
-                segments[segno - 1] = replace(seg, text_tgt="翻訳エラー")
-                save_segments_json_atomic(segments, seg_json_path)
-                progress.set_step("translate_done", False)
-                progress.set_artifact(
-                    "segments_translated_json", str(seg_json_path)
-                )
-                progress.save()
-            continue
+        text_tgt = (seg.text_tgt or "").strip()
+
+        # 翻訳済みかつ正常な結果はスキップする。
+        # ただし「翻訳エラー」プレースホルダーの場合は再翻訳を試みる。
+        if text_tgt and not _is_translation_error_placeholder(text_tgt):
+            if is_translation_glitch(text_tgt):
+                # glitch 検出されたが定型プレースホルダーではない → 再翻訳対象
+                pass
+            else:
+                continue
 
         # セグメント単位の元言語を決定する
         seg_source_lang = (
@@ -469,10 +528,11 @@ def translate_segments_resumable(
             )
             prev_engine = engine
 
+        retry_label = "（再翻訳）" if text_tgt else ""
         print_step(
             f"  翻訳 {segno}/{total}: {seg.start:.3f}-{seg.end:.3f} "
             f"[{seg_source_lang}→{target_lang}] "
-            f"'{seg.text_src[:60]}'"
+            f"'{seg.text_src[:60]}'{retry_label}"
         )
         tgt = translate_segment_safely(
             client, seg.text_src, seg_source_lang, target_lang

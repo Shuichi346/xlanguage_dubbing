@@ -5,15 +5,17 @@ TranslateGemma-12b-it (GGUF) による多言語翻訳処理。
 llama-cpp-python でプロセス内推論する。
 55言語対応。日英以外の言語ペアに使用する。
 
-TranslateGemma のチャットテンプレートは特殊な構造のため、
+TranslateGemma のチャットテンプレートは Gemma 3 ベースの特殊な構造のため、
 手動でプロンプトを構築して __call__ で直接推論する。
+
+プロンプト形式は google/translategemma-12b-it 公式リポジトリの
+chat_template.jinja（HuggingFace）に準拠:
+https://huggingface.co/google/translategemma-12b-it
 """
 
 from __future__ import annotations
 
 import gc
-from pathlib import Path
-from typing import Optional
 
 from xlanguage_dubbing.config import (
     TRANSLATEGEMMA_FILE,
@@ -22,7 +24,7 @@ from xlanguage_dubbing.config import (
     TRANSLATEGEMMA_REPEAT_PENALTY,
     TRANSLATEGEMMA_REPO,
 )
-from xlanguage_dubbing.lang_utils import LANG_CODE_TO_NAME, get_lang_name
+from xlanguage_dubbing.lang_utils import get_lang_name
 from xlanguage_dubbing.utils import PipelineError, print_step
 
 _GEMMA_MODEL = None
@@ -94,16 +96,31 @@ def _build_translategemma_prompt(
 ) -> str:
     """TranslateGemma のプロンプトを手動構築する。
 
-    TranslateGemma のチャットテンプレートは Gemma 3 ベースの特殊な形式。
-    llama-cpp-python の create_chat_completion ではテンプレートの互換性問題があるため、
-    プロンプトを直接構築して __call__ (completion) で推論する。
+    google/translategemma-12b-it 公式リポジトリの chat_template.jinja が
+    生成する正確なフォーマットに準拠する。Gemma 3 ベースのため制御トークンは
+    <start_of_turn> / <end_of_turn> を使用する。
+
+    公式テンプレートが生成する user コンテンツ:
+        You are a professional {SOURCE_LANG} ({SOURCE_CODE}) to
+        {TARGET_LANG} ({TARGET_CODE}) translator. Your goal is to
+        accurately convey the meaning and nuances of the original
+        {SOURCE_LANG} text while adhering to {TARGET_LANG} grammar,
+        vocabulary, and cultural sensitivities.
+        Produce only the {TARGET_LANG} translation, without any additional
+        explanations or commentary. Please translate the following
+        {SOURCE_LANG} text into {TARGET_LANG}:
+        [空行]
+        [空行]
+        {TEXT}
+
+    参照: https://huggingface.co/google/translategemma-12b-it
     """
     source_lang = get_lang_name(source_lang_code)
     target_lang = get_lang_name(target_lang_code)
 
-    # TranslateGemma の公式チャットテンプレートに準拠したプロンプト
-    prompt = (
-        f"<start_of_turn>user\n"
+    # 公式 chat_template.jinja に準拠した指示文
+    # テキスト前の改行は3つ（コロン直後 + 空行2つ）
+    user_content = (
         f"You are a professional {source_lang} ({source_lang_code}) to "
         f"{target_lang} ({target_lang_code}) translator. "
         f"Your goal is to accurately convey the meaning and nuances of the "
@@ -111,8 +128,16 @@ def _build_translategemma_prompt(
         f"vocabulary, and cultural sensitivities.\n"
         f"Produce only the {target_lang} translation, without any additional "
         f"explanations or commentary. Please translate the following "
-        f"{source_lang} text into {target_lang}:\n\n\n"
-        f"{text.strip()}<end_of_turn>\n"
+        f"{source_lang} text into {target_lang}:\n"
+        f"\n"
+        f"\n"
+        f"{text.strip()}"
+    )
+
+    # Gemma 3 のチャットテンプレート形式で組み立てる
+    prompt = (
+        f"<start_of_turn>user\n"
+        f"{user_content}<end_of_turn>\n"
         f"<start_of_turn>model\n"
     )
     return prompt

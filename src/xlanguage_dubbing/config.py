@@ -125,7 +125,7 @@ PYANNOTE_MODEL = _env("PYANNOTE_MODEL", "pyannote/speaker-diarization-community-
 # =========================
 
 CAT_TRANSLATE_REPO = _env("CAT_TRANSLATE_REPO", "mradermacher/CAT-Translate-7b-GGUF")
-CAT_TRANSLATE_FILE = _env("CAT_TRANSLATE_FILE", "CAT-Translate-7b.Q8_0.gguf")
+CAT_TRANSLATE_FILE = _env("CAT_TRANSLATE_FILE", "CAT-Translate-7b.Q6_K.gguf")
 CAT_TRANSLATE_N_GPU_LAYERS = _env_int("CAT_TRANSLATE_N_GPU_LAYERS", -1)
 CAT_TRANSLATE_N_CTX = _env_int("CAT_TRANSLATE_N_CTX", 4096)
 CAT_TRANSLATE_RETRIES = _env_int("CAT_TRANSLATE_RETRIES", 3)
@@ -140,7 +140,7 @@ TRANSLATEGEMMA_REPO = _env(
     "TRANSLATEGEMMA_REPO", "mradermacher/translategemma-12b-it-GGUF"
 )
 TRANSLATEGEMMA_FILE = _env(
-    "TRANSLATEGEMMA_FILE", "translategemma-12b-it.Q8_0.gguf"
+    "TRANSLATEGEMMA_FILE", "translategemma-12b-it.Q6_K.gguf"
 )
 TRANSLATEGEMMA_N_GPU_LAYERS = _env_int("TRANSLATEGEMMA_N_GPU_LAYERS", -1)
 TRANSLATEGEMMA_N_CTX = _env_int("TRANSLATEGEMMA_N_CTX", 2048)
