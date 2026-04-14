@@ -49,7 +49,12 @@ class TTSQualityError(Exception):
 
 
 def _get_voxcpm2_model():
-    """VoxCPM2 モデルを遅延ロードする。"""
+    """VoxCPM2 モデルを遅延ロードする。
+
+    voxcpm パッケージのバージョンにより from_pretrained() が受け付ける
+    引数が異なるため、device/optimize 付きで試行し、TypeError になった場合は
+    引数なしで再試行する。
+    """
     global _VOXCPM2_MODEL
     if _VOXCPM2_MODEL is not None:
         return _VOXCPM2_MODEL
@@ -66,15 +71,28 @@ def _get_voxcpm2_model():
 
     print_step(f"  VoxCPM2 モデル初期化中: {VOXCPM2_MODEL}")
 
-    # MPS 環境では torch.compile を無効化する（optimize=False）
-    # device="auto" で cuda → mps → cpu の自動フォールバック
-    # denoiser は参照音声の前処理用のため、メモリ節約で無効化
-    _VOXCPM2_MODEL = VoxCPM.from_pretrained(
-        VOXCPM2_MODEL,
-        device="auto",
-        optimize=False,
-        load_denoiser=False,
-    )
+    # v2.0.2 以降は device / optimize / load_denoiser を受け付ける。
+    # v2.0.0 では device が __init__ に存在しない場合がある。
+    try:
+        _VOXCPM2_MODEL = VoxCPM.from_pretrained(
+            VOXCPM2_MODEL,
+            device="auto",
+            optimize=False,
+            load_denoiser=False,
+        )
+    except TypeError as exc:
+        # 古いバージョンとの互換性: 認識されない引数を除去して再試行する
+        print_step(
+            f"  VoxCPM2 初期化リトライ（互換モード）: {exc}"
+        )
+        try:
+            _VOXCPM2_MODEL = VoxCPM.from_pretrained(
+                VOXCPM2_MODEL,
+                load_denoiser=False,
+            )
+        except TypeError:
+            # load_denoiser も未サポートの場合は引数なしで試す
+            _VOXCPM2_MODEL = VoxCPM.from_pretrained(VOXCPM2_MODEL)
 
     print_step("  VoxCPM2 モデル初期化完了")
     return _VOXCPM2_MODEL
@@ -141,7 +159,6 @@ def voxcpm2_synthesize(
             "  uv sync を実行してください。"
         ) from exc
 
-    # VoxCPM2 の generate() は numpy 配列を返す
     import numpy as np
 
     if isinstance(wav, torch.Tensor):
@@ -151,7 +168,12 @@ def voxcpm2_synthesize(
     else:
         wav_np = np.array(wav).squeeze()
 
-    sf.write(str(out_wav), wav_np, VOXCPM2_SAMPLE_RATE)
+    # サンプルレートをモデルから動的に取得する（フォールバック: 設定値）
+    sample_rate = VOXCPM2_SAMPLE_RATE
+    if hasattr(model, "tts_model") and hasattr(model.tts_model, "sample_rate"):
+        sample_rate = int(model.tts_model.sample_rate)
+
+    sf.write(str(out_wav), wav_np, sample_rate)
 
 
 def _convert_to_flac(in_wav: Path, out_flac: Path) -> None:

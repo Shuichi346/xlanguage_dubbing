@@ -1,5 +1,23 @@
 # Changelog
 
+## [9.0.1] - 2026-04-14
+
+### Fixed
+
+- VoxCPM2 TTS エンジンで全セグメントが失敗するバグを修正
+  - `VoxCPM.__init__() got an unexpected keyword argument 'device'` エラーの原因は
+    voxcpm v2.0.0 の `__init__` が `device` 引数を受け付けないためだった
+  - `voxcpm>=2.0.2` に最小バージョンを引き上げ（v2.0.2 で `device` 対応）
+  - 古いバージョンとの互換性のためフォールバック処理も追加
+- サンプルレートをモデルオブジェクトから動的に取得するよう改善
+- Python バージョン要件を `>=3.13` に統一
+  - `audioop-lts>=0.2.1` は Python 3.13+ 専用（3.12 では標準ライブラリの `audioop` が存在）
+  - `pydub` が内部で `audioop` を使用するため、Python 3.13 環境では `audioop-lts` が必須
+
+### Changed
+
+- バージョンを 9.0.0 → 9.0.1 に更新
+
 ## [9.0.0] - 2026-04-14
 
 ### Added
@@ -14,7 +32,6 @@
 
 ### Changed
 
-- Python バージョン要件を `>=3.13` → `>=3.12` に変更（VoxCPM2 の依存関係との互換性のため）
 - `pipeline.py` を TTS エンジン切り替え対応に拡張
 - `cli.py` に TTS エンジン表示を追加
 - `pyproject.toml` に `voxcpm` パッケージを依存に追加

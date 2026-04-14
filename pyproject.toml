@@ -1,6 +1,6 @@
 [project]
 name = "xlanguage-dubbing"
-version = "9.0.0"
+version = "9.0.1"
 description = "多言語動画を話者音声クローン付き他言語吹き替え動画に変換"
 requires-python = ">=3.13"
 dependencies = [
@@ -25,7 +25,7 @@ dependencies = [
     "accelerate>=0.20.0",
     "langdetect>=1.0.0",
     "torchcodec>=0.7.0",
-    "voxcpm>=2.0.0",
+    "voxcpm>=2.0.2",
 ]
 
 
