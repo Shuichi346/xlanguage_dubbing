@@ -6,10 +6,12 @@
 
 - Added optional Demucs voice/background separation before ASR and TTS reference extraction.
 - Added `ENABLE_AUDIO_SEPARATION` and `DEMUCS_MODEL` environment settings; disabled mode keeps the previous raw-audio workflow.
+- Re-added `TTS_ENGINE=kokoro-fastapi` as a speed-priority, non-voice-cloning Japanese TTS mode for English to Japanese dubbing.
 
 ### Changed
 
 - Separated background audio is now mixed at full volume; `ORIGINAL_VOLUME` only attenuates raw original audio when separation is disabled.
+- Kokoro-FastAPI mode skips speaker identification and reference-audio extraction because it uses the fixed `jf_alpha` voice.
 
 ## [9.0.2] - 2026-04-16
 

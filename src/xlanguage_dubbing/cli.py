@@ -14,6 +14,8 @@ from pathlib import Path
 from xlanguage_dubbing.config import (
     ENABLE_AUDIO_SEPARATION,
     INPUT_LANG,
+    KOKORO_FASTAPI_BASE_URL,
+    KOKORO_FASTAPI_DIR,
     OUTPUT_LANG,
     TEMP_ROOT,
     TTS_ENGINE,
@@ -32,6 +34,19 @@ from xlanguage_dubbing.utils import (
     print_step,
     which_or_raise,
 )
+
+
+def _is_kokoro_fastapi_tts() -> bool:
+    """Kokoro-FastAPI TTS が選択されているかを返す。"""
+    return TTS_ENGINE in {"kokoro-fastapi", "kokoro_fastapi", "kokoro"}
+
+
+def _tts_display_name() -> str:
+    if TTS_ENGINE == "voxcpm2":
+        return "VoxCPM2"
+    if _is_kokoro_fastapi_tts():
+        return "Kokoro-FastAPI"
+    return "OmniVoice"
 
 
 def _normalize_user_path(raw: str) -> Path:
@@ -92,8 +107,35 @@ def preflight_checks() -> None:
     print_step(f"  入力言語: {INPUT_LANG}")
     print_step(f"  出力言語: {OUTPUT_LANG}")
 
-    tts_name = "VoxCPM2" if TTS_ENGINE == "voxcpm2" else "OmniVoice"
+    if TTS_ENGINE not in {
+        "omnivoice",
+        "voxcpm2",
+        "kokoro-fastapi",
+        "kokoro_fastapi",
+        "kokoro",
+    }:
+        raise PipelineError(
+            "未知の TTS_ENGINE です: "
+            f"{TTS_ENGINE}（omnivoice / voxcpm2 / kokoro-fastapi を指定）"
+        )
+
+    if _is_kokoro_fastapi_tts():
+        if OUTPUT_LANG != "ja":
+            raise PipelineError(
+                "Kokoro-FastAPI は英語→日本語吹き替え専用です。"
+                f" OUTPUT_LANG={OUTPUT_LANG} では使用できません。"
+            )
+        if INPUT_LANG not in {"auto", "en", "en-us", "en_us"}:
+            raise PipelineError(
+                "Kokoro-FastAPI は英語→日本語吹き替え専用です。"
+                f" INPUT_LANG={INPUT_LANG} では使用できません。"
+            )
+
+    tts_name = _tts_display_name()
     print_step(f"  TTS エンジン: {tts_name}")
+    if _is_kokoro_fastapi_tts():
+        print_step(f"  Kokoro-FastAPI URL: {KOKORO_FASTAPI_BASE_URL}")
+        print_step(f"  Kokoro-FastAPI DIR: {KOKORO_FASTAPI_DIR}")
     print_step(
         "  音声分離: "
         f"{'Demucs 有効' if ENABLE_AUDIO_SEPARATION else '無効（元音声を使用）'}"

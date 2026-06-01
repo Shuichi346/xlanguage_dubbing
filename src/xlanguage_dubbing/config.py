@@ -85,7 +85,8 @@ DEMUCS_MODEL = _env("DEMUCS_MODEL", "htdemucs_ft").strip() or "htdemucs_ft"
 # TTS共通
 # =========================
 
-TTS_ENGINE = _env("TTS_ENGINE", "omnivoice").strip().lower()  # "omnivoice" or "voxcpm2"
+TTS_ENGINE = _env("TTS_ENGINE", "omnivoice").strip().lower()
+# "omnivoice", "voxcpm2", or "kokoro-fastapi"
 
 # =========================
 # whisper.cpp（CLIバイナリ + VAD）
@@ -193,6 +194,34 @@ VOXCPM2_DURATION_TOLERANCE = _env_float("VOXCPM2_DURATION_TOLERANCE", 0.5)
 VOXCPM2_QUALITY_RETRIES = _env_int("VOXCPM2_QUALITY_RETRIES", 2)
 # VoxCPM2 のネイティブ出力サンプルレート（48kHz）
 VOXCPM2_SAMPLE_RATE = 48000
+
+# =========================
+# Kokoro-FastAPI（速度優先・非ボイスクローン TTS）
+# =========================
+
+KOKORO_FASTAPI_BASE_URL = _env(
+    "KOKORO_FASTAPI_BASE_URL", "http://localhost:8880"
+).strip().rstrip("/")
+KOKORO_FASTAPI_DIR = Path(
+    _env("KOKORO_FASTAPI_DIR", "./Kokoro-FastAPI")
+).expanduser()
+KOKORO_FASTAPI_AUTO_START = _env_bool("KOKORO_FASTAPI_AUTO_START", True)
+KOKORO_FASTAPI_START_COMMAND = _env("KOKORO_FASTAPI_START_COMMAND", "").strip()
+KOKORO_FASTAPI_DOWNLOAD_UNIDIC = _env_bool(
+    "KOKORO_FASTAPI_DOWNLOAD_UNIDIC", True
+)
+KOKORO_FASTAPI_START_TIMEOUT_SEC = _env_int(
+    "KOKORO_FASTAPI_START_TIMEOUT_SEC", 180
+)
+KOKORO_FASTAPI_REQUEST_TIMEOUT_SEC = _env_int(
+    "KOKORO_FASTAPI_REQUEST_TIMEOUT_SEC", 300
+)
+KOKORO_FASTAPI_MODEL = _env("KOKORO_FASTAPI_MODEL", "kokoro").strip()
+KOKORO_FASTAPI_VOICE = _env("KOKORO_FASTAPI_VOICE", "jf_alpha").strip()
+KOKORO_FASTAPI_RESPONSE_FORMAT = _env(
+    "KOKORO_FASTAPI_RESPONSE_FORMAT", "wav"
+).strip().lower()
+KOKORO_FASTAPI_SPEED = _env_float("KOKORO_FASTAPI_SPEED", 1.0)
 
 # =========================
 # 音声設定（最終出力ミックス用）

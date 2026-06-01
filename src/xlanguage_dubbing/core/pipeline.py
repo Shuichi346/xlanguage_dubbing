@@ -83,11 +83,41 @@ def _get_tts_engine_name() -> str:
     return TTS_ENGINE
 
 
+def _is_kokoro_fastapi_tts() -> bool:
+    """Kokoro-FastAPI TTS が選択されているかを返す。"""
+    return TTS_ENGINE in {"kokoro-fastapi", "kokoro_fastapi", "kokoro"}
+
+
+def _tts_requires_voice_references() -> bool:
+    """TTS が話者リファレンス音声を必要とするかを返す。"""
+    return not _is_kokoro_fastapi_tts()
+
+
 def _get_tts_engine_display_name() -> str:
     """TTS エンジンの表示名を返す。"""
     if TTS_ENGINE == "voxcpm2":
         return "VoxCPM2"
+    if _is_kokoro_fastapi_tts():
+        return "Kokoro-FastAPI"
     return "OmniVoice"
+
+
+def _validate_kokoro_language_pair(detected_lang: str) -> None:
+    """Kokoro-FastAPI は英語→日本語専用モードとして扱う。"""
+    if not _is_kokoro_fastapi_tts():
+        return
+
+    normalized_detected = (detected_lang or "").strip().lower()
+    if OUTPUT_LANG != "ja":
+        raise PipelineError(
+            "Kokoro-FastAPI は英語→日本語吹き替え専用です。"
+            f" OUTPUT_LANG={OUTPUT_LANG} では使用できません。"
+        )
+    if normalized_detected and normalized_detected != "en":
+        raise PipelineError(
+            "Kokoro-FastAPI は英語→日本語吹き替え専用です。"
+            f" 検出言語={normalized_detected} では使用できません。"
+        )
 
 
 def _fill_detected_lang(segments: list, lang: str) -> list:
@@ -138,6 +168,7 @@ def process_one_video(
 
     asr_engine = get_asr_engine()
     tts_display = _get_tts_engine_display_name()
+    skip_speaker_identification = _is_kokoro_fastapi_tts()
     print_step(f"ASR エンジン: {asr_engine}")
     print_step(f"TTS エンジン: {tts_display}")
 
@@ -257,6 +288,11 @@ def process_one_video(
 
             print_step("3. 話者分離: VibeVoice-ASR 内蔵のため省略")
             print_step("4. 話者ID割り当て: VibeVoice-ASR 内蔵のため省略")
+            if skip_speaker_identification:
+                print_step(
+                    "   Kokoro-FastAPI は非ボイスクローンのため話者情報は使用しません"
+                )
+                diarization = None
 
             segments_with_speaker = segments_raw
         else:
@@ -288,27 +324,37 @@ def process_one_video(
             progress.set_artifact("asr_srt", str(srt_src_path))
             progress.save()
 
-            from xlanguage_dubbing.diarization.alignment import assign_speakers
-            from xlanguage_dubbing.diarization.speaker import (
-                release_pipeline,
-                run_diarization,
-            )
+            if skip_speaker_identification:
+                print_step(
+                    "3-4. 話者分離/話者ID割り当て: "
+                    "Kokoro-FastAPI は非ボイスクローンのため省略"
+                )
+                diarization = None
+                segments_with_speaker = segments_raw
+                progress.set_step("diarization_done", False)
+                progress.save()
+            else:
+                from xlanguage_dubbing.diarization.alignment import assign_speakers
+                from xlanguage_dubbing.diarization.speaker import (
+                    release_pipeline,
+                    run_diarization,
+                )
 
-            print_step("3. pyannote.audio で話者分離")
-            diarization = run_diarization(wav_whisper)
+                print_step("3. pyannote.audio で話者分離")
+                diarization = run_diarization(wav_whisper)
 
-            progress.set_step("diarization_done", True)
-            progress.save()
+                progress.set_step("diarization_done", True)
+                progress.save()
 
-            print_step("4. Whisperセグメントに話者ID割り当て")
-            segments_with_speaker = assign_speakers(segments_raw, diarization)
-            speaker_ids = {s.speaker_id for s in segments_with_speaker}
-            print_step(
-                f"   話者数: {len(speaker_ids)}, ID: {sorted(speaker_ids)}"
-            )
+                print_step("4. Whisperセグメントに話者ID割り当て")
+                segments_with_speaker = assign_speakers(segments_raw, diarization)
+                speaker_ids = {s.speaker_id for s in segments_with_speaker}
+                print_step(
+                    f"   話者数: {len(speaker_ids)}, ID: {sorted(speaker_ids)}"
+                )
 
-            release_pipeline()
-            force_memory_cleanup()
+                release_pipeline()
+                force_memory_cleanup()
 
         # 5. セグメント加工
         print_step(
@@ -348,6 +394,7 @@ def process_one_video(
     print_step(
         f"  検出言語: {detected_lang} ({get_lang_name(detected_lang)})"
     )
+    _validate_kokoro_language_pair(detected_lang)
     engine_name = select_translation_engine(detected_lang, OUTPUT_LANG)
     print_step(
         f"  翻訳エンジン: "
@@ -356,16 +403,22 @@ def process_one_video(
     )
 
     # ===== 6. 話者リファレンス音声生成 =====
-    if diarization is not None:
-        print_step(f"6. {tts_display} 用の話者代表リファレンス音声を抽出")
-        ref_cache.build_omnivoice_references(
-            voice_audio_path, diarization, segments_src
-        )
-    else:
-        _reload_cached_references(ref_cache, segments_src)
+    if _tts_requires_voice_references():
+        if diarization is not None:
+            print_step(f"6. {tts_display} 用の話者代表リファレンス音声を抽出")
+            ref_cache.build_omnivoice_references(
+                voice_audio_path, diarization, segments_src
+            )
+        else:
+            _reload_cached_references(ref_cache, segments_src)
 
-    print_step(f"6.5. {tts_display} セグメント単位リファレンス音声を切り出し")
-    ref_cache.build_omnivoice_segment_references(voice_audio_path, segments_src)
+        print_step(f"6.5. {tts_display} セグメント単位リファレンス音声を切り出し")
+        ref_cache.build_omnivoice_segment_references(voice_audio_path, segments_src)
+    else:
+        print_step(
+            "6-6.5. 話者リファレンス音声生成: "
+            "Kokoro-FastAPI は非ボイスクローンのため省略"
+        )
 
     # ===== 7. 翻訳 =====
     print_step("7. 翻訳（再開対応）")
@@ -393,6 +446,10 @@ def process_one_video(
     if _get_tts_engine_name() == "voxcpm2":
         _run_tts_voxcpm2(
             segments_translated, seg_audio_dir, work_dir, progress, ref_cache
+        )
+    elif _is_kokoro_fastapi_tts():
+        _run_tts_kokoro_fastapi(
+            segments_translated, seg_audio_dir, work_dir, progress
         )
     else:
         _run_tts_omnivoice(
@@ -714,6 +771,39 @@ def _run_tts_voxcpm2(
     finally:
         release_voxcpm2_model()
         force_memory_cleanup()
+
+
+def _run_tts_kokoro_fastapi(
+    segments_translated, seg_audio_dir, work_dir, progress,
+):
+    """Kokoro-FastAPI で TTS を実行する。"""
+    from xlanguage_dubbing.kokoro_fastapi_tts import (
+        ensure_kokoro_fastapi_server,
+        generate_segment_tts_kokoro_fastapi,
+    )
+
+    print_step("8. Kokoro-FastAPI で日本語音声生成（速度優先・非クローン）")
+    ensure_kokoro_fastapi_server()
+
+    def _build_segment_label(segno, total, seg):
+        return (
+            f"  TTS seg {segno}/{total}: {seg.start:.3f}-{seg.end:.3f} "
+            "voice=jf_alpha (Kokoro-FastAPI)"
+        )
+
+    def _generate(seg, out_audio_stub, segno):
+        return generate_segment_tts_kokoro_fastapi(
+            seg, out_audio_stub, segno=segno
+        )
+
+    _run_tts_loop(
+        segments_translated=segments_translated,
+        seg_audio_dir=seg_audio_dir,
+        work_dir=work_dir,
+        progress=progress,
+        segment_label_builder=_build_segment_label,
+        generator=_generate,
+    )
 
 
 def _reload_cached_references(ref_cache, segments):

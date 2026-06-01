@@ -99,7 +99,7 @@ Edit `.env` to configure the following:
 | `ASR_ENGINE` | Speech recognition engine | `vibevoice` (recommended), `whisper` |
 | `ENABLE_AUDIO_SEPARATION` | Use Demucs vocal/background separation | `true` |
 | `DEMUCS_MODEL` | Voice/background separation model | `htdemucs_ft` |
-| `TTS_ENGINE` | Voice synthesis engine | `omnivoice` (default), `voxcpm2` |
+| `TTS_ENGINE` | Voice synthesis engine | `omnivoice` (default), `voxcpm2`, `kokoro-fastapi` |
 | `HF_AUTH_TOKEN` | HuggingFace token (only when using whisper) | `hf_xxxxxxxxxxxx` |
 
 ### 5. ASR Engine Setup
@@ -138,15 +138,28 @@ uv run xlanguage-dubbing
 
 Set the `TTS_ENGINE` variable in `.env` to select the voice synthesis engine.
 
-| | OmniVoice (Default) | VoxCPM2 |
-|---|---|---|
-| Languages | 600+ | 30 |
-| Output sample rate | 24kHz | 48kHz |
-| Model size | Small | 2B parameters |
-| Cloning mode | Voice cloning | Ultimate Cloning (ref audio + transcript) |
-| Duration control | Supported (target duration) | Not directly supported (natural length) |
-| VRAM usage | Low | ~8GB |
-| Setup | `TTS_ENGINE=omnivoice` | `TTS_ENGINE=voxcpm2` |
+| | OmniVoice (Default) | VoxCPM2 | Kokoro-FastAPI |
+|---|---|---|---|
+| Languages | 600+ | 30 | English to Japanese only |
+| Output sample rate | 24kHz | 48kHz | API output converted to project FLAC |
+| Model size | Small | 2B parameters | Kokoro-82M |
+| Cloning mode | Voice cloning | Ultimate Cloning (ref audio + transcript) | No cloning, speed-priority fixed voice |
+| Speaker identification | Used for references | Used for references | Skipped |
+| Duration control | Supported (target duration) | Not directly supported (natural length) | Natural length |
+| VRAM usage | Low | ~8GB | Low |
+| Setup | `TTS_ENGINE=omnivoice` | `TTS_ENGINE=voxcpm2` | `TTS_ENGINE=kokoro-fastapi` |
+
+### Kokoro-FastAPI Mode
+
+Kokoro-FastAPI runs as a local OpenAI-compatible TTS API server. This project reuses a running server at `KOKORO_FASTAPI_BASE_URL`, or starts the Direct Run checkout in `KOKORO_FASTAPI_DIR` via `uv`.
+
+```bash
+git clone https://github.com/remsky/Kokoro-FastAPI.git
+cd Kokoro-FastAPI
+uv run python -m unidic download
+```
+
+Use `TTS_ENGINE=kokoro-fastapi`, `INPUT_LANG=en` or `auto`, and `OUTPUT_LANG=ja`. The Japanese voice is fixed to `jf_alpha` by default.
 
 ---
 

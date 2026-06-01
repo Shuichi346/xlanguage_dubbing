@@ -99,7 +99,7 @@ cp .env.example .env
 | `ASR_ENGINE` | 音声認識エンジン | `vibevoice`（推奨）, `whisper` |
 | `ENABLE_AUDIO_SEPARATION` | Demucsで人声/背景音分離を使用するか | `true` |
 | `DEMUCS_MODEL` | 人声/背景音の分離モデル | `htdemucs_ft` |
-| `TTS_ENGINE` | 音声合成エンジン | `omnivoice`（デフォルト）, `voxcpm2` |
+| `TTS_ENGINE` | 音声合成エンジン | `omnivoice`（デフォルト）, `voxcpm2`, `kokoro-fastapi` |
 | `HF_AUTH_TOKEN` | HuggingFaceトークン（whisper使用時のみ） | `hf_xxxxxxxxxxxx` |
 
 ### 5. ASRエンジンのセットアップ
@@ -138,15 +138,28 @@ uv run xlanguage-dubbing
 
 `.env`の`TTS_ENGINE`変数を設定して音声合成エンジンを選択します。
 
-| | OmniVoice（デフォルト） | VoxCPM2 |
-|---|---|---|
-| 言語 | 600+ | 30 |
-| 出力サンプルレート | 24kHz | 48kHz |
-| モデルサイズ | 小 | 2Bパラメータ |
-| クローニングモード | 音声クローニング | Ultimate Cloning（参照音声＋転写） |
-| 長さ制御 | 対応（目標時間） | 直接対応なし（自然な長さ） |
-| VRAM使用量 | 少 | ~8GB |
-| 設定 | `TTS_ENGINE=omnivoice` | `TTS_ENGINE=voxcpm2` |
+| | OmniVoice（デフォルト） | VoxCPM2 | Kokoro-FastAPI |
+|---|---|---|---|
+| 言語 | 600+ | 30 | 英語→日本語のみ |
+| 出力サンプルレート | 24kHz | 48kHz | API出力をプロジェクト標準FLACへ変換 |
+| モデルサイズ | 小 | 2Bパラメータ | Kokoro-82M |
+| クローニングモード | 音声クローニング | Ultimate Cloning（参照音声＋転写） | 非クローン・速度優先固定ボイス |
+| 話者識別 | 参照音声生成に使用 | 参照音声生成に使用 | スキップ |
+| 長さ制御 | 対応（目標時間） | 直接対応なし（自然な長さ） | 自然な長さ |
+| VRAM使用量 | 少 | ~8GB | 少 |
+| 設定 | `TTS_ENGINE=omnivoice` | `TTS_ENGINE=voxcpm2` | `TTS_ENGINE=kokoro-fastapi` |
+
+### Kokoro-FastAPIモード
+
+Kokoro-FastAPIはローカルのOpenAI互換TTS APIサーバーとして動作します。このプロジェクトは`KOKORO_FASTAPI_BASE_URL`の既存サーバーを再利用し、起動していない場合は`KOKORO_FASTAPI_DIR`のDirect Run環境を`uv`で起動します。
+
+```bash
+git clone https://github.com/remsky/Kokoro-FastAPI.git
+cd Kokoro-FastAPI
+uv run python -m unidic download
+```
+
+`TTS_ENGINE=kokoro-fastapi`、`INPUT_LANG=en`または`auto`、`OUTPUT_LANG=ja`で使用してください。日本語音声のvoiceはデフォルトで`jf_alpha`です。
 
 ---
 
