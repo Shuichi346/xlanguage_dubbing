@@ -1,6 +1,7 @@
 .env
 temp/
 input_videos/*
+!input_videos/test.mp4
 __pycache__/
 *.pyc
 .DS_Store
