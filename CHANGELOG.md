@@ -7,6 +7,7 @@
 - Added optional Demucs voice/background separation before ASR and TTS reference extraction.
 - Added `ENABLE_AUDIO_SEPARATION` and `DEMUCS_MODEL` environment settings; disabled mode keeps the previous raw-audio workflow.
 - Re-added `TTS_ENGINE=kokoro-fastapi` as a speed-priority, non-voice-cloning Japanese TTS mode for English to Japanese dubbing.
+- Added `scripts/run_config_matrix.py` for developer verification across all supported `ASR_ENGINE`, `ENABLE_AUDIO_SEPARATION`, and `TTS_ENGINE` combinations on `input_videos/test.mp4`.
 
 ### Changed
 

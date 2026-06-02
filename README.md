@@ -200,7 +200,19 @@ Run a syntax check for the package:
 uv run python -m compileall src
 ```
 
-There is no repository test suite configured yet. For functional verification, run `uv run xlanguage-dubbing` on a short video sample after changing pipeline, ASR, translation, TTS, or FFmpeg behavior.
+There is no repository unit test suite configured yet. For functional verification, run `uv run xlanguage-dubbing` on a short video sample after changing pipeline, ASR, translation, TTS, or FFmpeg behavior.
+
+To verify the supported ASR, audio-separation, and TTS configuration matrix against the fixed sample video at `input_videos/test.mp4`, run:
+
+```bash
+./scripts/run_config_matrix.py --clean
+```
+
+The matrix runner fixes `INPUT_LANG=en` and `OUTPUT_LANG=ja`, runs every combination of `ASR_ENGINE`, `ENABLE_AUDIO_SEPARATION`, and `TTS_ENGINE`, and writes per-case logs plus `summary.json` under `temp/config_matrix/`. To inspect the planned combinations without launching the full media pipeline, run:
+
+```bash
+./scripts/run_config_matrix.py --dry-run
+```
 
 ## License
 

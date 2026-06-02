@@ -200,7 +200,19 @@ uv run python -m unidic download
 uv run python -m compileall src
 ```
 
-リポジトリのテストスイートはまだ設定されていません。機能検証には、パイプライン、ASR、翻訳、TTS、またはFFmpegの動作を変更した後に、短い動画サンプルで `uv run xlanguage-dubbing` を実行してください。
+リポジトリのユニットテストスイートはまだ設定されていません。機能検証を行うには、パイプライン、ASR、翻訳、TTS、またはFFmpegの動作を変更した後、短い動画サンプルに対して `uv run xlanguage-dubbing` を実行してください。
+
+`input_videos/test.mp4` にある固定サンプル動画を使用して、サポートされているASR・音声分離・TTSの設定マトリックスを検証するには、以下を実行してください：
+
+```bash
+./scripts/run_config_matrix.py --clean
+```
+
+マトリックスランナーは `INPUT_LANG=en`、`OUTPUT_LANG=ja` を固定し、`ASR_ENGINE`、`ENABLE_AUDIO_SEPARATION`、`TTS_ENGINE` のすべての組み合わせを実行して、ケースごとのログと `summary.json` を `temp/config_matrix/` 以下に出力します。メディアパイプライン全体を起動せずに予定されている組み合わせを確認するには、以下を実行してください：
+
+```bash
+./scripts/run_config_matrix.py --dry-run
+```
 
 ## ライセンス
 
