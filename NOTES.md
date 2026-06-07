@@ -1,5 +1,9 @@
 # Notes
 
+## 2026-06-07
+
+- Changed VoxCPM2 to Controllable Cloning: generation uses per-segment `reference_wav_path` only, while speaker/segment reference cache artifacts use engine-specific `voxcpm2_*` names.
+
 ## 2026-06-02
 
 - Added a configuration-matrix runner that isolates each case under `temp/config_matrix/`, symlinks the fixed sample video into a per-case input directory, and logs every ASR/audio-separation/TTS combination separately.

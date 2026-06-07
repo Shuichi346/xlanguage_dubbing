@@ -8,3 +8,4 @@ Project instructions for coding agents working in this repository.
 - Do not remove the Demucs `--two-stems vocals` contract unless the pipeline is updated to consume a different voice/background stem layout.
 - Preserve Kokoro-FastAPI Japanese-mode safeguards: launch the server without the parent `VIRTUAL_ENV`, keep warmup/request `lang_code` aligned with `KOKORO_FASTAPI_VOICE`, and do not route Japanese chunk sizing through the English eSpeak phonemizer.
 - Keep `scripts/run_config_matrix.py` aligned with supported values whenever `ASR_ENGINE`, `ENABLE_AUDIO_SEPARATION`, or `TTS_ENGINE` options change.
+- Keep VoxCPM2 in Controllable Cloning mode: pass per-segment `reference_wav_path` only for synthesis, and keep VoxCPM2 reference cache artifacts under `voxcpm2_*` names.

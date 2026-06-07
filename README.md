@@ -135,7 +135,7 @@ When `ENABLE_AUDIO_SEPARATION=true`, Demucs writes separated stems and the final
 | Engine | Use when | Notes |
 |---|---|---|
 | `omnivoice` | You want the default voice-cloning path. | Uses speaker reference audio. |
-| `voxcpm2` | You want VoxCPM2 Ultimate Cloning behavior. | Uses reference audio plus transcript context. |
+| `voxcpm2` | You want VoxCPM2 Controllable Cloning behavior. | Uses per-segment reference audio. |
 | `kokoro-fastapi` | You want fast English to Japanese dubbing. | Fixed Japanese voice, no cloning, skips speaker identification. |
 
 Kokoro-FastAPI mode is intentionally limited to `INPUT_LANG=auto` or English and `OUTPUT_LANG=ja`. The default voice is `jf_alpha`.

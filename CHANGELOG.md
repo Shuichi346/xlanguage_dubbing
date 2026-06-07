@@ -11,11 +11,13 @@
 
 ### Changed
 
+- Changed `TTS_ENGINE=voxcpm2` synthesis from Ultimate Cloning to Controllable Cloning by using per-segment `reference_wav_path` without prompt audio/text.
 - Separated background audio is now mixed at full volume; `ORIGINAL_VOLUME` only attenuates raw original audio when separation is disabled.
 - Kokoro-FastAPI mode skips speaker identification and reference-audio extraction because it uses the fixed `jf_alpha` voice.
 
 ### Fixed
 
+- Store VoxCPM2 reference metadata and segment clips under `voxcpm2_*` names instead of `omnivoice_*` names.
 - Fixed Kokoro-FastAPI Japanese TTS startup by isolating the child server environment, forcing `jf_alpha`/`lang_code=j`, and avoiding English eSpeak phonemizer calls during Japanese chunk sizing.
 
 ## [9.0.2] - 2026-04-16

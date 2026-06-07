@@ -10,13 +10,12 @@ import gc
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
-from pydub import AudioSegment
-
 from xlanguage_dubbing.audio.ffmpeg import extract_audio_segment
 from xlanguage_dubbing.config import (
     OMNIVOICE_REFERENCE_MAX_SEC,
     OMNIVOICE_REFERENCE_MIN_SEC,
     OMNIVOICE_REFERENCE_TARGET_SEC,
+    TTS_ENGINE,
 )
 from xlanguage_dubbing.core.models import DiarizationSegment, Segment
 from xlanguage_dubbing.utils import (
@@ -31,8 +30,9 @@ from xlanguage_dubbing.utils import (
 class SpeakerReferenceCache:
     """話者ごとのリファレンス音声をキャッシュ管理する。"""
 
-    def __init__(self, cache_dir: Path) -> None:
+    def __init__(self, cache_dir: Path, tts_engine: str | None = None) -> None:
         self._cache_dir = cache_dir
+        self._tts_engine = _normalize_reference_engine(tts_engine or TTS_ENGINE)
         self._omnivoice_refs: Dict[str, Path] = {}
         self._omnivoice_prompt_texts: Dict[str, str] = {}
         self._omnivoice_segment_refs: Dict[int, Path] = {}
@@ -42,6 +42,10 @@ class SpeakerReferenceCache:
     @property
     def cache_dir(self) -> Path:
         return self._cache_dir
+
+    @property
+    def segment_reference_dir(self) -> Path:
+        return self._cache_dir / f"{self._tts_engine}_segment_refs"
 
     def get_omnivoice_reference_path(self, speaker_id: str) -> Optional[Path]:
         path = self._omnivoice_refs.get(speaker_id)
@@ -125,7 +129,8 @@ class SpeakerReferenceCache:
                 }
                 preview = prompt_text[:80] if prompt_text else "(empty)"
                 print_step(
-                    f"  OmniVoice リファレンス生成: {speaker_id} "
+                    f"  {_reference_engine_label(self._tts_engine)} "
+                    f"リファレンス生成: {speaker_id} "
                     f"({ref_dur:.1f}s) text='{preview}'"
                 )
             else:
@@ -138,7 +143,7 @@ class SpeakerReferenceCache:
         video_path: Path,
         segments: List[Segment],
     ) -> None:
-        seg_ref_dir = self._cache_dir / "omnivoice_segment_refs"
+        seg_ref_dir = self.segment_reference_dir
         ensure_dir(seg_ref_dir)
 
         segment_meta: Dict[str, Dict[str, str | float]] = {}
@@ -185,12 +190,13 @@ class SpeakerReferenceCache:
 
         generated = len(self._omnivoice_segment_refs)
         print_step(
-            f"  OmniVoice セグメント単位リファレンス生成: "
+            f"  {_reference_engine_label(self._tts_engine)} "
+            "セグメント単位リファレンス生成: "
             f"{generated}/{len(segments)} 件"
         )
 
     def reload_omnivoice_segment_references(self, total_segments: int) -> None:
-        seg_ref_dir = self._cache_dir / "omnivoice_segment_refs"
+        seg_ref_dir = self.segment_reference_dir
         if not seg_ref_dir.exists():
             return
         for segno in range(1, total_segments + 1):
@@ -200,7 +206,7 @@ class SpeakerReferenceCache:
         self._load_omnivoice_segment_meta()
 
     def _save_omnivoice_prompt_meta(self, meta):
-        meta_path = self._cache_dir / "omnivoice_prompt_meta.json"
+        meta_path = self._prompt_meta_path()
         existing = load_json_if_exists(meta_path)
         if isinstance(existing, dict):
             existing.update(meta)
@@ -208,7 +214,7 @@ class SpeakerReferenceCache:
         atomic_write_json(meta_path, meta)
 
     def _load_omnivoice_prompt_meta(self):
-        meta_path = self._cache_dir / "omnivoice_prompt_meta.json"
+        meta_path = self._prompt_meta_path()
         obj = load_json_if_exists(meta_path)
         if not isinstance(obj, dict):
             return
@@ -219,8 +225,11 @@ class SpeakerReferenceCache:
                 info.get("prompt_text", "") or ""
             )
 
+    def _prompt_meta_path(self) -> Path:
+        return self._cache_dir / f"{self._tts_engine}_prompt_meta.json"
+
     def _save_omnivoice_segment_meta(self, meta):
-        meta_path = self._cache_dir / "omnivoice_segment_meta.json"
+        meta_path = self._segment_meta_path()
         existing = load_json_if_exists(meta_path)
         if isinstance(existing, dict):
             existing.update(meta)
@@ -228,7 +237,7 @@ class SpeakerReferenceCache:
         atomic_write_json(meta_path, meta)
 
     def _load_omnivoice_segment_meta(self):
-        meta_path = self._cache_dir / "omnivoice_segment_meta.json"
+        meta_path = self._segment_meta_path()
         obj = load_json_if_exists(meta_path)
         if not isinstance(obj, dict):
             return
@@ -242,6 +251,9 @@ class SpeakerReferenceCache:
             self._omnivoice_segment_prompt_texts[segno] = str(
                 info.get("prompt_text", "") or ""
             )
+
+    def _segment_meta_path(self) -> Path:
+        return self._cache_dir / f"{self._tts_engine}_segment_meta.json"
 
     def clear(self):
         self._omnivoice_refs.clear()
@@ -307,3 +319,11 @@ def _collect_reference_prompt_text(reference_seg, segments):
         key=lambda seg: abs(((seg.start + seg.end) / 2.0) - ref_center),
     )
     return normalize_spaces(nearest.text_src)
+
+
+def _normalize_reference_engine(tts_engine: str) -> str:
+    return "voxcpm2" if tts_engine.strip().lower() == "voxcpm2" else "omnivoice"
+
+
+def _reference_engine_label(tts_engine: str) -> str:
+    return "VoxCPM2" if tts_engine == "voxcpm2" else "OmniVoice"

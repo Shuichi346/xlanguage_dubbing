@@ -135,7 +135,7 @@ uv run xlanguage-dubbing --generate-script
 | エンジン | 推奨ケース | 備考 |
 |---|---|---|
 | `omnivoice` | デフォルトの音声クローニングパスを使用したい場合。 | スピーカーリファレンス音声を使用。 |
-| `voxcpm2` | VoxCPM2 Ultimate Cloningの動作を使用したい場合。 | リファレンス音声に加えて文字起こしコンテキストを使用。 |
+| `voxcpm2` | VoxCPM2 Controllable Cloningの動作を使用したい場合。 | セグメント単位のリファレンス音声を使用。 |
 | `kokoro-fastapi` | 高速な英語から日本語への吹き替えを使用したい場合。 | 固定日本語音声、クローニングなし、話者識別をスキップ。 |
 
 Kokoro-FastAPIモードは意図的に `INPUT_LANG=auto` または英語、`OUTPUT_LANG=ja` に限定されています。デフォルト音声は `jf_alpha` です。

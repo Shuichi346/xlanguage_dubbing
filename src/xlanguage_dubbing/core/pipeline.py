@@ -742,7 +742,7 @@ def _run_tts_voxcpm2(
         release_voxcpm2_model,
     )
 
-    print_step("8. VoxCPM2 でボイスクローン音声生成（Ultimate Cloning）")
+    print_step("8. VoxCPM2 でボイスクローン音声生成（Controllable Cloning）")
 
     try:
         def _build_segment_label(segno, total, seg):

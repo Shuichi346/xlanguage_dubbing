@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 VoxCPM2 による音声合成処理。
-30言語対応の Ultimate Cloning モード（参照音声＋参照テキスト）で
-最高品質のボイスクローン TTS を実現する。
+30言語対応の Controllable Cloning モード（参照音声のみ）で
+ボイスクローン TTS を実現する。
 48kHz ネイティブ出力。
 """
 
@@ -119,13 +119,7 @@ def voxcpm2_synthesize(
     ref_audio_path: Optional[Path] = None,
     ref_text: str = "",
 ) -> None:
-    """VoxCPM2 の Ultimate Cloning モードで音声を合成する。
-
-    Ultimate Cloning: prompt_wav_path + prompt_text + reference_wav_path
-    で最高品質のボイスクローンを実現する。
-    同じ参照音声を prompt_wav_path と reference_wav_path の両方に渡すことで
-    音色の類似度を最大化する（公式ドキュメント推奨）。
-    """
+    """VoxCPM2 の Controllable Cloning モードで音声を合成する。"""
     ensure_dir(out_wav.parent)
     model = _get_voxcpm2_model()
 
@@ -136,12 +130,7 @@ def voxcpm2_synthesize(
     }
 
     if ref_audio_path is not None and ref_audio_path.exists():
-        ref_path_str = str(ref_audio_path)
-        # Ultimate Cloning: prompt_wav_path + prompt_text + reference_wav_path
-        gen_kwargs["prompt_wav_path"] = ref_path_str
-        gen_kwargs["reference_wav_path"] = ref_path_str
-        if ref_text.strip():
-            gen_kwargs["prompt_text"] = ref_text.strip()
+        gen_kwargs["reference_wav_path"] = str(ref_audio_path)
 
     try:
         wav = model.generate(**gen_kwargs)
