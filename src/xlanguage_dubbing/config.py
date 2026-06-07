@@ -86,7 +86,7 @@ DEMUCS_MODEL = _env("DEMUCS_MODEL", "htdemucs_ft").strip() or "htdemucs_ft"
 # =========================
 
 TTS_ENGINE = _env("TTS_ENGINE", "omnivoice").strip().lower()
-# "omnivoice", "voxcpm2", or "kokoro-fastapi"
+# "omnivoice", "voxcpm2", or "irodori"
 
 # =========================
 # whisper.cpp（CLIバイナリ + VAD）
@@ -196,32 +196,27 @@ VOXCPM2_QUALITY_RETRIES = _env_int("VOXCPM2_QUALITY_RETRIES", 1)
 VOXCPM2_SAMPLE_RATE = 48000
 
 # =========================
-# Kokoro-FastAPI（速度優先・非ボイスクローン TTS）
+# Irodori-TTS-Server（日本語 48kHz ボイスクローン TTS）
 # =========================
 
-KOKORO_FASTAPI_BASE_URL = _env(
-    "KOKORO_FASTAPI_BASE_URL", "http://localhost:8880"
+IRODORI_TTS_SERVER_HOST = _env("IRODORI_TTS_SERVER_HOST", "0.0.0.0").strip()
+IRODORI_TTS_SERVER_PORT = _env_int("IRODORI_TTS_SERVER_PORT", 8088)
+IRODORI_TTS_BASE_URL = _env(
+    "IRODORI_TTS_BASE_URL", f"http://localhost:{IRODORI_TTS_SERVER_PORT}"
 ).strip().rstrip("/")
-KOKORO_FASTAPI_DIR = Path(
-    _env("KOKORO_FASTAPI_DIR", "./Kokoro-FastAPI")
+IRODORI_TTS_DIR = Path(
+    _env("IRODORI_TTS_DIR", "./Irodori-TTS-Server")
 ).expanduser()
-KOKORO_FASTAPI_AUTO_START = _env_bool("KOKORO_FASTAPI_AUTO_START", True)
-KOKORO_FASTAPI_START_COMMAND = _env("KOKORO_FASTAPI_START_COMMAND", "").strip()
-KOKORO_FASTAPI_DOWNLOAD_UNIDIC = _env_bool(
-    "KOKORO_FASTAPI_DOWNLOAD_UNIDIC", True
-)
-KOKORO_FASTAPI_START_TIMEOUT_SEC = _env_int(
-    "KOKORO_FASTAPI_START_TIMEOUT_SEC", 180
-)
-KOKORO_FASTAPI_REQUEST_TIMEOUT_SEC = _env_int(
-    "KOKORO_FASTAPI_REQUEST_TIMEOUT_SEC", 300
-)
-KOKORO_FASTAPI_MODEL = _env("KOKORO_FASTAPI_MODEL", "kokoro").strip()
-KOKORO_FASTAPI_VOICE = _env("KOKORO_FASTAPI_VOICE", "jf_alpha").strip()
-KOKORO_FASTAPI_RESPONSE_FORMAT = _env(
-    "KOKORO_FASTAPI_RESPONSE_FORMAT", "wav"
+IRODORI_TTS_AUTO_START = _env_bool("IRODORI_TTS_AUTO_START", True)
+IRODORI_TTS_START_COMMAND = _env("IRODORI_TTS_START_COMMAND", "").strip()
+IRODORI_TTS_START_TIMEOUT_SEC = _env_int("IRODORI_TTS_START_TIMEOUT_SEC", 300)
+IRODORI_TTS_REQUEST_TIMEOUT_SEC = _env_int("IRODORI_TTS_REQUEST_TIMEOUT_SEC", 600)
+IRODORI_TTS_API_KEY = _env("IRODORI_TTS_API_KEY", "").strip()
+IRODORI_TTS_MODEL = _env("IRODORI_TTS_MODEL", "irodori-tts").strip()
+IRODORI_TTS_RESPONSE_FORMAT = _env(
+    "IRODORI_TTS_RESPONSE_FORMAT", "wav"
 ).strip().lower()
-KOKORO_FASTAPI_SPEED = _env_float("KOKORO_FASTAPI_SPEED", 1.0)
+IRODORI_TTS_SPEED = _env_float("IRODORI_TTS_SPEED", 1.0)
 
 # =========================
 # 音声設定（最終出力ミックス用）

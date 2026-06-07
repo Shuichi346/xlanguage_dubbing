@@ -8,41 +8,41 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from xlanguage_dubbing.config import KOKORO_FASTAPI_DIR, TTS_ENGINE
+from xlanguage_dubbing.config import (
+    IRODORI_TTS_DIR,
+    IRODORI_TTS_SERVER_HOST,
+    IRODORI_TTS_SERVER_PORT,
+    TTS_ENGINE,
+)
 from xlanguage_dubbing.utils import print_step
 
 
-def _is_kokoro_fastapi_tts() -> bool:
-    return TTS_ENGINE in {"kokoro-fastapi", "kokoro_fastapi", "kokoro"}
+def _is_irodori_tts() -> bool:
+    return TTS_ENGINE in {"irodori", "irodori-tts", "irodori_tts"}
 
 
 def preflight_server_checks() -> None:
     """TTS サーバーのヘルスチェックを実行する。"""
-    if _is_kokoro_fastapi_tts():
-        print_step("  TTS エンジン: Kokoro-FastAPI（ローカルAPIサーバー使用）")
+    if _is_irodori_tts():
+        print_step("  TTS エンジン: Irodori-TTS（ローカルAPIサーバー使用）")
     else:
         print_step("  TTS エンジン: プロセス内推論（サーバー不要）")
 
 
 def generate_start_script(output_path: Path) -> None:
     """サーバー起動用シェルスクリプトを生成する。"""
-    if _is_kokoro_fastapi_tts():
+    if _is_irodori_tts():
         script = f"""#!/bin/bash
 set -euo pipefail
 
-# === xlanguage-dubbing Kokoro-FastAPI 起動スクリプト ===
-# Direct Run (via uv): https://github.com/remsky/Kokoro-FastAPI
+# === xlanguage-dubbing Irodori-TTS-Server 起動スクリプト ===
+# Setup:
+#   git clone https://github.com/Aratako/Irodori-TTS-Server.git
+#   cd Irodori-TTS-Server
+#   uv sync --extra cpu
 
-cd "{KOKORO_FASTAPI_DIR}"
-uv run python -m unidic download
-
-if [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" && -x ./start-gpu_mac.sh ]]; then
-  exec ./start-gpu_mac.sh
-elif [[ -x ./start-gpu.sh ]]; then
-  exec ./start-gpu.sh
-else
-  exec ./start-cpu.sh
-fi
+cd "{IRODORI_TTS_DIR}"
+exec uv run python -m irodori_openai_tts --host "{IRODORI_TTS_SERVER_HOST}" --port "{IRODORI_TTS_SERVER_PORT}"
 """
         output_path.write_text(script, encoding="utf-8")
         output_path.chmod(0o755)

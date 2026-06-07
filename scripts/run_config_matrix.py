@@ -18,7 +18,7 @@ from pathlib import Path
 
 ASR_ENGINES = ("vibevoice", "whisper")
 AUDIO_SEPARATION_VALUES = ("true", "false")
-TTS_ENGINES = ("omnivoice", "voxcpm2", "kokoro-fastapi")
+TTS_ENGINES = ("omnivoice", "voxcpm2", "irodori")
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXED_TEST_VIDEO = REPO_ROOT / "input_videos" / "test.mp4"

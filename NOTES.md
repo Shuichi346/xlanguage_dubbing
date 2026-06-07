@@ -3,6 +3,8 @@
 ## 2026-06-07
 
 - Changed VoxCPM2 to Controllable Cloning: generation uses per-segment `reference_wav_path` only, while speaker/segment reference cache artifacts use engine-specific `voxcpm2_*` names.
+- Replaced supported Kokoro-FastAPI selection with `TTS_ENGINE=irodori`.
+- Irodori uses the local `Irodori-TTS-Server` API, sends per-segment reference audio as `irodori.ref_wav`, and intentionally omits Caption / Style Prompt and fixed `seconds`.
 
 ## 2026-06-02
 

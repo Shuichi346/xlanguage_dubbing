@@ -38,7 +38,7 @@
 - 3つのTTSモードを提供:
   - `omnivoice`: デフォルトの音声クローニングエンジン。
   - `voxcpm2`: リファレンス音声と文字起こしを使用した30言語対応のVoxCPM2音声クローニング。
-  - `kokoro-fastapi`: Kokoro-FastAPIを使用した、英語から日本語への高速固定音声モード。
+  - `irodori`: Irodori-TTS-Server経由で使用する日本語Irodori-TTS-500M-v3音声クローニング。
 - ASRおよびTTSリファレンス抽出前のオプションのDemucs音声/背景分離。
 - 中断したジョブを再開できる動画ごとのチェックポイント機能。
 - セグメントレベルのタイミング調整とFFmpegによる最終的な音声/映像のマルチプレクシング。
@@ -73,15 +73,15 @@ chmod +x scripts/setup_whisper.sh
 ./scripts/setup_whisper.sh
 ```
 
-Kokoro-FastAPI TTSを使用する場合は、設定されたパスにサーバーのチェックアウトをクローンしてください:
+Irodori TTSを使用する場合は、設定されたパスにサーバーのチェックアウトをクローンし、CPU extraで同期してください。macOSではPyPIのPyTorch wheelを使用し、CPU/MPSで動作します:
 
 ```bash
-git clone https://github.com/remsky/Kokoro-FastAPI.git
-cd Kokoro-FastAPI
-uv run python -m unidic download
+git clone https://github.com/Aratako/Irodori-TTS-Server.git
+cd Irodori-TTS-Server
+uv sync --extra cpu
 ```
 
-デフォルトの `KOKORO_FASTAPI_DIR=./Kokoro-FastAPI` は、このリポジトリのルート内にそのチェックアウトがあることを想定しています。
+デフォルトの `IRODORI_TTS_DIR=./Irodori-TTS-Server` は、このリポジトリのルート内にそのチェックアウトがあることを想定しています。パイプラインはサーバーAPIモードを使用し、セグメント単位リファレンス音声を `irodori.ref_wav` として送信します。
 
 ## 使い方
 
@@ -114,7 +114,7 @@ uv run xlanguage-dubbing --generate-script
 | `OUTPUT_LANG` | 吹き替え後の出力言語。 |
 | `ASR_ENGINE` | `vibevoice` または `whisper`。 |
 | `ENABLE_AUDIO_SEPARATION` | `true` の場合、Demucsの `vocals` / `no_vocals` ステムを使用。 |
-| `TTS_ENGINE` | `omnivoice`、`voxcpm2`、または `kokoro-fastapi`。 |
+| `TTS_ENGINE` | `omnivoice`、`voxcpm2`、または `irodori`。 |
 | `HF_AUTH_TOKEN` | ゲートまたは認証が必要なモデルのダウンロードに使用するHugging Faceトークン。 |
 | `ORIGINAL_VOLUME` | 音声分離が無効の場合のオリジナル音声の音量。 |
 | `DUBBED_VOLUME` | 最終ミックスにおける吹き替え音声の音量。 |
@@ -136,9 +136,9 @@ uv run xlanguage-dubbing --generate-script
 |---|---|---|
 | `omnivoice` | デフォルトの音声クローニングパスを使用したい場合。 | スピーカーリファレンス音声を使用。 |
 | `voxcpm2` | VoxCPM2 Controllable Cloningの動作を使用したい場合。 | セグメント単位のリファレンス音声を使用。 |
-| `kokoro-fastapi` | 高速な英語から日本語への吹き替えを使用したい場合。 | 固定日本語音声、クローニングなし、話者識別をスキップ。 |
+| `irodori` | ローカルAPIサーバー経由でIrodori-TTS-500M-v3音声クローニングを使用する、英語から日本語への吹き替えの場合のみ推奨。 | `irodori.ref_wav` でセグメント単位のリファレンス音声を使用。 |
 
-Kokoro-FastAPIモードは意図的に `INPUT_LANG=auto` または英語、`OUTPUT_LANG=ja` に限定されています。デフォルト音声は `jf_alpha` です。
+Irodoriモードは `Irodori-TTS-500M-v3` が日本語専用TTSモデルであるため、`OUTPUT_LANG=ja` に限定されています。このリポジトリでは英語から日本語へのジョブの場合のみ推奨します。Caption / Style Prompt と固定 `seconds` オプションは送信せず、サーバー標準のDuration Predictorを使用します。
 
 ### 翻訳
 
@@ -171,16 +171,20 @@ uv sync
 
 DemucsがプロジェクトのDependenciesに追加される前に環境が作成されていた場合、再同期することで更新されます。
 
-### Kokoro-FastAPIが起動中に終了する
+### Irodori-TTS-Serverが起動中に終了する
 
-`KOKORO_FASTAPI_DIR` で指定されたローカルチェックアウトを使用し、UniDicが準備されていることを確認してください:
+`IRODORI_TTS_DIR` で指定されたローカルチェックアウトを使用し、CPU extraで同期されていることを確認してください:
 
 ```bash
-cd Kokoro-FastAPI
-uv run python -m unidic download
+cd Irodori-TTS-Server
+uv sync --extra cpu
 ```
 
-このプロジェクトは親の `.venv` を継承せずにKokoro-FastAPIを起動し、`jf_alpha` の日本語ウォームアップデフォルトを設定し、日本語音声リクエストには `lang_code=j` を送信します。また、ローカルのKokoro-FastAPIチェックアウトを使用することで、日本語のチャンクサイジングが英語のeSpeak音素変換器を経由しないようにします。
+生成されるヘルパースクリプトは、以下でAPIサーバーを起動します:
+
+```bash
+uv run python -m irodori_openai_tts --host 0.0.0.0 --port 8088
+```
 
 ### WhisperモードでWhisper.cppが見つからない
 

@@ -38,7 +38,7 @@ The project is built for local Apple Silicon workflows and is currently tested o
 - Offers three TTS modes:
   - `omnivoice`: default voice-cloning engine.
   - `voxcpm2`: 30-language VoxCPM2 voice cloning with reference audio and transcript.
-  - `kokoro-fastapi`: fast fixed-voice English to Japanese mode using Kokoro-FastAPI.
+  - `irodori`: Japanese Irodori-TTS-500M-v3 voice cloning through Irodori-TTS-Server.
 - Optional Demucs vocal/background separation before ASR and TTS reference extraction.
 - Per-video checkpointing so interrupted jobs can resume.
 - Segment-level retiming and final audio/video muxing with FFmpeg.
@@ -73,15 +73,16 @@ chmod +x scripts/setup_whisper.sh
 ./scripts/setup_whisper.sh
 ```
 
-For Kokoro-FastAPI TTS, clone the server checkout at the configured path:
+For Irodori TTS, clone the server checkout at the configured path and sync the CPU
+extra. On macOS this uses PyPI PyTorch wheels and can run on CPU/MPS:
 
 ```bash
-git clone https://github.com/remsky/Kokoro-FastAPI.git
-cd Kokoro-FastAPI
-uv run python -m unidic download
+git clone https://github.com/Aratako/Irodori-TTS-Server.git
+cd Irodori-TTS-Server
+uv sync --extra cpu
 ```
 
-The default `KOKORO_FASTAPI_DIR=./Kokoro-FastAPI` expects that checkout inside this repository root.
+The default `IRODORI_TTS_DIR=./Irodori-TTS-Server` expects that checkout inside this repository root. The pipeline uses the server API mode and sends per-segment reference audio as `irodori.ref_wav`.
 
 ## Usage
 
@@ -114,7 +115,7 @@ All runtime settings are read from `.env`. See [.env.example](.env.example) for 
 | `OUTPUT_LANG` | Dubbed output language. |
 | `ASR_ENGINE` | `vibevoice` or `whisper`. |
 | `ENABLE_AUDIO_SEPARATION` | Use Demucs `vocals` / `no_vocals` stems when `true`. |
-| `TTS_ENGINE` | `omnivoice`, `voxcpm2`, or `kokoro-fastapi`. |
+| `TTS_ENGINE` | `omnivoice`, `voxcpm2`, or `irodori`. |
 | `HF_AUTH_TOKEN` | Hugging Face token used by gated or authenticated model downloads. |
 | `ORIGINAL_VOLUME` | Original-audio volume only when audio separation is disabled. |
 | `DUBBED_VOLUME` | Dubbed voice volume in the final mix. |
@@ -136,9 +137,9 @@ When `ENABLE_AUDIO_SEPARATION=true`, Demucs writes separated stems and the final
 |---|---|---|
 | `omnivoice` | You want the default voice-cloning path. | Uses speaker reference audio. |
 | `voxcpm2` | You want VoxCPM2 Controllable Cloning behavior. | Uses per-segment reference audio. |
-| `kokoro-fastapi` | You want fast English to Japanese dubbing. | Fixed Japanese voice, no cloning, skips speaker identification. |
+| `irodori` | Recommended only for English to Japanese dubbing with Irodori-TTS-500M-v3 voice cloning through a local API server. | Uses per-segment reference audio via `irodori.ref_wav`. |
 
-Kokoro-FastAPI mode is intentionally limited to `INPUT_LANG=auto` or English and `OUTPUT_LANG=ja`. The default voice is `jf_alpha`.
+Irodori mode is limited to `OUTPUT_LANG=ja` because `Irodori-TTS-500M-v3` is a Japanese-only TTS model, and this repository recommends it only for English to Japanese jobs. Caption / style prompt and fixed `seconds` options are not sent; the server default duration predictor is used.
 
 ### Translation
 
@@ -171,16 +172,20 @@ uv sync
 
 If the environment was created before Demucs was added to the project dependencies, resyncing refreshes it.
 
-### Kokoro-FastAPI exits during startup
+### Irodori-TTS-Server exits during startup
 
-Use the local checkout expected by `KOKORO_FASTAPI_DIR`, then make sure UniDic has been prepared:
+Use the local checkout expected by `IRODORI_TTS_DIR`, then make sure the CPU extra has been synced:
 
 ```bash
-cd Kokoro-FastAPI
-uv run python -m unidic download
+cd Irodori-TTS-Server
+uv sync --extra cpu
 ```
 
-This project starts Kokoro-FastAPI without inheriting the parent `.venv`, sets Japanese warmup defaults for `jf_alpha`, and sends `lang_code=j` for Japanese speech requests. The local Kokoro-FastAPI checkout also avoids routing Japanese chunk sizing through the English eSpeak phonemizer.
+The generated helper script starts the API server with:
+
+```bash
+uv run python -m irodori_openai_tts --host 0.0.0.0 --port 8088
+```
 
 ### Whisper mode cannot find whisper.cpp
 

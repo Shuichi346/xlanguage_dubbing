@@ -6,19 +6,19 @@
 
 - Added optional Demucs voice/background separation before ASR and TTS reference extraction.
 - Added `ENABLE_AUDIO_SEPARATION` and `DEMUCS_MODEL` environment settings; disabled mode keeps the previous raw-audio workflow.
-- Re-added `TTS_ENGINE=kokoro-fastapi` as a speed-priority, non-voice-cloning Japanese TTS mode for English to Japanese dubbing.
+- Added `TTS_ENGINE=irodori` for Japanese Irodori-TTS-500M-v3 voice cloning through Irodori-TTS-Server.
 - Added `scripts/run_config_matrix.py` for developer verification across all supported `ASR_ENGINE`, `ENABLE_AUDIO_SEPARATION`, and `TTS_ENGINE` combinations on `input_videos/test.mp4`.
 
 ### Changed
 
 - Changed `TTS_ENGINE=voxcpm2` synthesis from Ultimate Cloning to Controllable Cloning by using per-segment `reference_wav_path` without prompt audio/text.
 - Separated background audio is now mixed at full volume; `ORIGINAL_VOLUME` only attenuates raw original audio when separation is disabled.
-- Kokoro-FastAPI mode skips speaker identification and reference-audio extraction because it uses the fixed `jf_alpha` voice.
+- Replaced supported `TTS_ENGINE=kokoro-fastapi` selection with `TTS_ENGINE=irodori`.
+- Irodori mode uses per-segment reference audio via `irodori.ref_wav`; caption/style prompt and fixed `seconds` options are not sent.
 
 ### Fixed
 
 - Store VoxCPM2 reference metadata and segment clips under `voxcpm2_*` names instead of `omnivoice_*` names.
-- Fixed Kokoro-FastAPI Japanese TTS startup by isolating the child server environment, forcing `jf_alpha`/`lang_code=j`, and avoiding English eSpeak phonemizer calls during Japanese chunk sizing.
 
 ## [9.0.2] - 2026-04-16
 
