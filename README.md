@@ -208,6 +208,9 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 | `IRODORI_CODEC_DEVICE` | Device used by the Irodori codec, default `cpu`. Due to a PyTorch bug, `mps` may cause increased memory usage — be cautious of processing load. |
 | `IRODORI_TTS_RESPONSE_FORMAT` | Audio response format, default `wav`. |
 | `IRODORI_TTS_SPEED` | Speed value sent to the Irodori speech API. |
+| `IRODORI_TTS_NUM_STEPS` | Irodori diffusion steps, default `8` for Sway Sampling. |
+| `IRODORI_TTS_T_SCHEDULE_MODE` | Irodori sampling schedule, default `sway`. |
+| `IRODORI_TTS_SWAY_COEFF` | Irodori Sway Sampling coefficient, default `-1.0`. |
 
 ## Engine Notes
 
@@ -226,7 +229,7 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 | `voxcpm2` | You want VoxCPM2 Controllable Cloning behavior. | Passes per-segment `reference_wav_path` only; prompt audio/text is not sent to VoxCPM2. |
 | `irodori` | You want Japanese cloned TTS through Irodori-TTS-Server. | Recommended here for English-to-Japanese jobs, only allowed with `OUTPUT_LANG=ja`, and sends per-segment reference audio as `irodori.ref_wav`. |
 
-Irodori mode intentionally does not send Caption, Style Prompt, or fixed `seconds`; the server duration predictor is used.
+Irodori mode sends Sway Sampling options by default (`num_steps=8`, `t_schedule_mode=sway`, `sway_coeff=-1.0`). It intentionally does not send Caption, Style Prompt, or fixed `seconds`; the server duration predictor is used.
 
 ### Translation
 

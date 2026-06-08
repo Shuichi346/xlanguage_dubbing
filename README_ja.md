@@ -210,6 +210,9 @@ uv run xlanguage-dubbing --generate-script
  |
 | `IRODORI_TTS_RESPONSE_FORMAT` | 音声レスポンス形式、デフォルトは `wav`。 |
 | `IRODORI_TTS_SPEED` | Irodori 音声 API に送信するスピード値。 |
+| `IRODORI_TTS_NUM_STEPS` | Irodori の diffusion step 数。Sway Sampling 用にデフォルトは `8`。 |
+| `IRODORI_TTS_T_SCHEDULE_MODE` | Irodori のサンプリングスケジュール。デフォルトは `sway`。 |
+| `IRODORI_TTS_SWAY_COEFF` | Irodori の Sway Sampling 係数。デフォルトは `-1.0`。 |
 
 ## エンジンについて
 
@@ -228,7 +231,7 @@ uv run xlanguage-dubbing --generate-script
 | `voxcpm2` | VoxCPM2 のコントローラブルクローニング動作を使いたい場合。 | セグメントごとの `reference_wav_path` のみを渡します。プロンプト音声／テキストは VoxCPM2 に送信されません。 |
 | `irodori` | Irodori-TTS-Server を通じて日本語クローン TTS を使いたい場合。 | ここでは英日ジョブに推奨。`OUTPUT_LANG=ja` の場合のみ許可され、セグメントごとの参照音声を `irodori.ref_wav` として送信します。 |
 
-Irodori モードは意図的に Caption・Style Prompt・固定 `seconds` を送信しません。サーバーの長さ予測機能を使用します。
+Irodori モードはデフォルトで Sway Sampling オプション（`num_steps=8`、`t_schedule_mode=sway`、`sway_coeff=-1.0`）を送信します。意図的に Caption・Style Prompt・固定 `seconds` は送信しません。サーバーの長さ予測機能を使用します。
 
 ### 翻訳
 

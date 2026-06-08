@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Irodori-TTS-Server による日本語ボイスクローン TTS。
 
@@ -19,7 +18,6 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Optional
 
 from xlanguage_dubbing.audio.ffmpeg import ffprobe_duration_sec
 from xlanguage_dubbing.config import (
@@ -30,6 +28,7 @@ from xlanguage_dubbing.config import (
     IRODORI_TTS_BASE_URL,
     IRODORI_TTS_DIR,
     IRODORI_TTS_MODEL,
+    IRODORI_TTS_NUM_STEPS,
     IRODORI_TTS_REQUEST_TIMEOUT_SEC,
     IRODORI_TTS_RESPONSE_FORMAT,
     IRODORI_TTS_SERVER_HOST,
@@ -37,6 +36,8 @@ from xlanguage_dubbing.config import (
     IRODORI_TTS_SPEED,
     IRODORI_TTS_START_COMMAND,
     IRODORI_TTS_START_TIMEOUT_SEC,
+    IRODORI_TTS_SWAY_COEFF,
+    IRODORI_TTS_T_SCHEDULE_MODE,
     MIN_SEGMENT_SEC,
     TTS_CHANNELS,
     TTS_SAMPLE_RATE,
@@ -52,7 +53,7 @@ from xlanguage_dubbing.utils import (
     which_or_raise,
 )
 
-_SERVER_PROCESS: Optional[subprocess.Popen] = None
+_SERVER_PROCESS: subprocess.Popen | None = None
 _SERVER_LOG_FILE = None
 _SERVER_READY = False
 
@@ -232,6 +233,9 @@ def irodori_tts_synthesize(
         "speed": IRODORI_TTS_SPEED,
         "irodori": {
             "ref_wav": str(ref_audio_path),
+            "num_steps": IRODORI_TTS_NUM_STEPS,
+            "t_schedule_mode": IRODORI_TTS_T_SCHEDULE_MODE,
+            "sway_coeff": IRODORI_TTS_SWAY_COEFF,
         },
     }
     body = json.dumps(payload).encode("utf-8")
@@ -286,7 +290,7 @@ def generate_segment_tts_irodori(
     out_audio_stub: Path,
     ref_cache: SpeakerReferenceCache,
     segno: int = 0,
-) -> Optional[TtsMeta]:
+) -> TtsMeta | None:
     """Irodori-TTS でセグメントのボイスクローン音声を生成する。"""
     if seg.duration < MIN_SEGMENT_SEC:
         return None

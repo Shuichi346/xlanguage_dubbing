@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 定数・設定値の定義。
 .envから環境変数を読み込み、全設定値を一元管理する。
@@ -231,6 +230,11 @@ IRODORI_TTS_RESPONSE_FORMAT = _env(
     "IRODORI_TTS_RESPONSE_FORMAT", "wav"
 ).strip().lower()
 IRODORI_TTS_SPEED = _env_float("IRODORI_TTS_SPEED", 1.0)
+IRODORI_TTS_NUM_STEPS = _env_int("IRODORI_TTS_NUM_STEPS", 8)
+IRODORI_TTS_T_SCHEDULE_MODE = _env_choice(
+    "IRODORI_TTS_T_SCHEDULE_MODE", "sway", {"linear", "sway"}
+)
+IRODORI_TTS_SWAY_COEFF = _env_float("IRODORI_TTS_SWAY_COEFF", -1.0)
 
 # =========================
 # 音声設定（最終出力ミックス用）

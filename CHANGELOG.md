@@ -8,6 +8,7 @@
 - Added `ENABLE_AUDIO_SEPARATION`, `DEMUCS_MODEL`, and `DEMUCS_DEVICE` environment settings; disabled mode keeps the previous raw-audio workflow.
 - Added `TTS_ENGINE=irodori` for Japanese Irodori-TTS-500M-v3 voice cloning through Irodori-TTS-Server.
 - Added `IRODORI_MODEL_DEVICE` and `IRODORI_CODEC_DEVICE` settings, both defaulting to `cpu`.
+- Added Irodori Sway Sampling settings: `IRODORI_TTS_NUM_STEPS`, `IRODORI_TTS_T_SCHEDULE_MODE`, and `IRODORI_TTS_SWAY_COEFF`.
 - Added `scripts/run_config_matrix.py` for developer verification across all supported `ASR_ENGINE`, `ENABLE_AUDIO_SEPARATION`, and `TTS_ENGINE` combinations on `input_videos/test.mp4`.
 
 ### Changed
@@ -16,7 +17,7 @@
 - Changed `TTS_ENGINE=voxcpm2` synthesis from Ultimate Cloning to Controllable Cloning by using per-segment `reference_wav_path` without prompt audio/text.
 - Separated background audio is now mixed at full volume; `ORIGINAL_VOLUME` only attenuates raw original audio when separation is disabled.
 - Replaced supported `TTS_ENGINE=kokoro-fastapi` selection with `TTS_ENGINE=irodori`.
-- Irodori mode uses per-segment reference audio via `irodori.ref_wav`; caption/style prompt and fixed `seconds` options are not sent.
+- Irodori mode uses per-segment reference audio via `irodori.ref_wav` and sends Sway Sampling options by default; caption/style prompt and fixed `seconds` options are not sent.
 
 ### Fixed
 
