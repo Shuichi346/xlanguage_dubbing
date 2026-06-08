@@ -203,6 +203,8 @@ uv run xlanguage-dubbing --generate-script
 | `IRODORI_TTS_AUTO_START` | サーバーが正常稼働していない場合に Irodori-TTS-Server を自動起動します。 |
 | `IRODORI_TTS_START_COMMAND` | オプションのカスタムサーバー起動コマンド。 |
 | `IRODORI_TTS_API_KEY` | Irodori-TTS-Server に送信するオプションの API キー。 |
+| `IRODORI_MODEL_DEVICE` | Irodori モデルの実行デバイス。デフォルトは `cpu`。 |
+| `IRODORI_CODEC_DEVICE` | Irodori コーデックの実行デバイス。デフォルトは `cpu`。 |
 | `IRODORI_TTS_RESPONSE_FORMAT` | 音声レスポンス形式、デフォルトは `wav`。 |
 | `IRODORI_TTS_SPEED` | Irodori 音声 API に送信するスピード値。 |
 

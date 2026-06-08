@@ -23,6 +23,8 @@ from typing import Optional
 
 from xlanguage_dubbing.audio.ffmpeg import ffprobe_duration_sec
 from xlanguage_dubbing.config import (
+    IRODORI_CODEC_DEVICE,
+    IRODORI_MODEL_DEVICE,
     IRODORI_TTS_API_KEY,
     IRODORI_TTS_AUTO_START,
     IRODORI_TTS_BASE_URL,
@@ -112,8 +114,8 @@ def _server_env() -> dict[str, str]:
     env = os.environ.copy()
     env.pop("VIRTUAL_ENV", None)
     env.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
-    env.setdefault("IRODORI_MODEL_DEVICE", "auto")
-    env.setdefault("IRODORI_CODEC_DEVICE", "auto")
+    env["IRODORI_MODEL_DEVICE"] = IRODORI_MODEL_DEVICE
+    env["IRODORI_CODEC_DEVICE"] = IRODORI_CODEC_DEVICE
     env.setdefault("IRODORI_HF_CHECKPOINT", "Aratako/Irodori-TTS-500M-v3")
     if IRODORI_TTS_API_KEY:
         env.setdefault("IRODORI_API_KEY", IRODORI_TTS_API_KEY)

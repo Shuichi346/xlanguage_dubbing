@@ -203,6 +203,8 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 | `IRODORI_TTS_AUTO_START` | Start Irodori-TTS-Server automatically when it is not already healthy. |
 | `IRODORI_TTS_START_COMMAND` | Optional custom server start command. |
 | `IRODORI_TTS_API_KEY` | Optional API key sent to Irodori-TTS-Server. |
+| `IRODORI_MODEL_DEVICE` | Device used by the Irodori model, default `cpu`. |
+| `IRODORI_CODEC_DEVICE` | Device used by the Irodori codec, default `cpu`. |
 | `IRODORI_TTS_RESPONSE_FORMAT` | Audio response format, default `wav`. |
 | `IRODORI_TTS_SPEED` | Speed value sent to the Irodori speech API. |
 

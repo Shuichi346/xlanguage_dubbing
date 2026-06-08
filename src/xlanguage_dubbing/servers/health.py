@@ -6,9 +6,12 @@
 
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 
 from xlanguage_dubbing.config import (
+    IRODORI_CODEC_DEVICE,
+    IRODORI_MODEL_DEVICE,
     IRODORI_TTS_DIR,
     IRODORI_TTS_SERVER_HOST,
     IRODORI_TTS_SERVER_PORT,
@@ -32,6 +35,11 @@ def preflight_server_checks() -> None:
 def generate_start_script(output_path: Path) -> None:
     """サーバー起動用シェルスクリプトを生成する。"""
     if _is_irodori_tts():
+        start_command = (
+            "exec uv run python -m irodori_openai_tts "
+            f'--host "{IRODORI_TTS_SERVER_HOST}" '
+            f'--port "{IRODORI_TTS_SERVER_PORT}"'
+        )
         script = f"""#!/bin/bash
 set -euo pipefail
 
@@ -41,8 +49,11 @@ set -euo pipefail
 #   cd Irodori-TTS-Server
 #   uv sync --extra cpu
 
+export IRODORI_MODEL_DEVICE={shlex.quote(IRODORI_MODEL_DEVICE)}
+export IRODORI_CODEC_DEVICE={shlex.quote(IRODORI_CODEC_DEVICE)}
+
 cd "{IRODORI_TTS_DIR}"
-exec uv run python -m irodori_openai_tts --host "{IRODORI_TTS_SERVER_HOST}" --port "{IRODORI_TTS_SERVER_PORT}"
+{start_command}
 """
         output_path.write_text(script, encoding="utf-8")
         output_path.chmod(0o755)
