@@ -9,7 +9,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
-from xlanguage_dubbing.config import DEMUCS_MODEL
+from xlanguage_dubbing.config import DEMUCS_DEVICE, DEMUCS_MODEL
 from xlanguage_dubbing.utils import (
     PipelineError,
     ensure_dir,
@@ -61,14 +61,15 @@ def separate_voice_and_background(
         extract_audio_for_demucs(media_in, input_wav)
 
     print_step(
-        f"1. Demucsで音声分離: model={DEMUCS_MODEL}, two-stems=vocals"
+        "1. Demucsで音声分離: "
+        f"model={DEMUCS_MODEL}, device={DEMUCS_DEVICE}, two-stems=vocals"
     )
     cmd = [
         sys.executable,
         "-m", "demucs",
         "-n", DEMUCS_MODEL,
         "--two-stems", "vocals",
-        "-d", "cpu",
+        "-d", DEMUCS_DEVICE,
         "-o", str(demucs_dir),
         str(input_wav),
     ]

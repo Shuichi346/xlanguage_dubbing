@@ -50,6 +50,17 @@ def _env_bool(key: str, default: bool) -> bool:
     return v.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _env_choice(key: str, default: str, choices: set[str]) -> str:
+    """環境変数を許可された文字列から取得する。"""
+    v = os.getenv(key)
+    if v is None:
+        return default
+    normalized = v.strip().lower()
+    if normalized in choices:
+        return normalized
+    return default
+
+
 # =========================
 # パス設定
 # =========================
@@ -79,7 +90,8 @@ ASR_ENGINE = _env("ASR_ENGINE", "vibevoice")  # "vibevoice" or "whisper"
 # =========================
 
 ENABLE_AUDIO_SEPARATION = _env_bool("ENABLE_AUDIO_SEPARATION", True)
-DEMUCS_MODEL = _env("DEMUCS_MODEL", "htdemucs_ft").strip() or "htdemucs_ft"
+DEMUCS_MODEL = _env("DEMUCS_MODEL", "htdemucs").strip() or "htdemucs"
+DEMUCS_DEVICE = _env_choice("DEMUCS_DEVICE", "mps", {"cpu", "mps"})
 
 # =========================
 # TTS共通

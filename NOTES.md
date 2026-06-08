@@ -1,5 +1,9 @@
 # Notes
 
+## 2026-06-08
+
+- Changed the default Demucs model to `htdemucs` and added `DEMUCS_DEVICE` so Apple Silicon runs can use `mps` while retaining `cpu` as an explicit fallback.
+
 ## 2026-06-07
 
 - Changed VoxCPM2 to Controllable Cloning: generation uses per-segment `reference_wav_path` only, while speaker/segment reference cache artifacts use engine-specific `voxcpm2_*` names.

@@ -167,7 +167,8 @@ uv run xlanguage-dubbing --generate-script
 |---|---|
 | `ASR_ENGINE` | `vibevoice` または `whisper`。 |
 | `ENABLE_AUDIO_SEPARATION` | `true` のとき Demucs の `vocals` / `no_vocals` ステムを使用し、`false` のとき元のメディア音声を使用します。 |
-| `DEMUCS_MODEL` | Demucs モデル名、デフォルトは `htdemucs_ft`。 |
+| `DEMUCS_MODEL` | Demucs モデル名、デフォルトは `htdemucs`。品質優先の場合は fine-tuned モデルの `htdemucs_ft` も使用できます。 |
+| `DEMUCS_DEVICE` | Demucs の推論デバイス。Apple Silicon 向けのデフォルトは `mps`。MPS が使えない、または不安定な場合は `cpu` を指定します。 |
 | `WHISPER_MODEL` | `scripts/setup_whisper.sh` と whisper モードで使用する whisper.cpp モデル名。 |
 | `WHISPER_LANG` | whisper.cpp の言語引数；通常は `INPUT_LANG` または `auto` に従います。 |
 | `VAD_MODEL` | whisper.cpp VAD モデル名。 |
@@ -203,8 +204,10 @@ uv run xlanguage-dubbing --generate-script
 | `IRODORI_TTS_AUTO_START` | サーバーが正常稼働していない場合に Irodori-TTS-Server を自動起動します。 |
 | `IRODORI_TTS_START_COMMAND` | オプションのカスタムサーバー起動コマンド。 |
 | `IRODORI_TTS_API_KEY` | Irodori-TTS-Server に送信するオプションの API キー。 |
-| `IRODORI_MODEL_DEVICE` | Irodori モデルの実行デバイス。デフォルトは `cpu`。 |
-| `IRODORI_CODEC_DEVICE` | Irodori コーデックの実行デバイス。デフォルトは `cpu`。 |
+| `IRODORI_MODEL_DEVICE` | Irodori モデルの実行デバイス。デフォルトは `cpu`。Pytorchのバグにより`mps`はメモリー増加で処理負荷注意。
+ |
+| `IRODORI_CODEC_DEVICE` | Irodori コーデックの実行デバイス。デフォルトは `cpu`。Pytorchのバグにより`mps`はメモリー増加で処理負荷注意。
+ |
 | `IRODORI_TTS_RESPONSE_FORMAT` | 音声レスポンス形式、デフォルトは `wav`。 |
 | `IRODORI_TTS_SPEED` | Irodori 音声 API に送信するスピード値。 |
 

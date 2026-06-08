@@ -12,6 +12,8 @@ from importlib.util import find_spec
 from pathlib import Path
 
 from xlanguage_dubbing.config import (
+    DEMUCS_DEVICE,
+    DEMUCS_MODEL,
     ENABLE_AUDIO_SEPARATION,
     INPUT_LANG,
     IRODORI_TTS_BASE_URL,
@@ -135,6 +137,9 @@ def preflight_checks() -> None:
         "  音声分離: "
         f"{'Demucs 有効' if ENABLE_AUDIO_SEPARATION else '無効（元音声を使用）'}"
     )
+    if ENABLE_AUDIO_SEPARATION:
+        print_step(f"  Demucs model: {DEMUCS_MODEL}")
+        print_step(f"  Demucs device: {DEMUCS_DEVICE}")
 
     try:
         import torch

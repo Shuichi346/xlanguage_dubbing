@@ -167,7 +167,8 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 |---|---|
 | `ASR_ENGINE` | `vibevoice` or `whisper`. |
 | `ENABLE_AUDIO_SEPARATION` | Use Demucs `vocals` / `no_vocals` stems when `true`; use original media audio when `false`. |
-| `DEMUCS_MODEL` | Demucs model name, default `htdemucs_ft`. |
+| `DEMUCS_MODEL` | Demucs model name, default `htdemucs`. Use `htdemucs_ft` for the fine-tuned model when quality is preferred over speed. |
+| `DEMUCS_DEVICE` | Demucs inference device, default `mps` for Apple Silicon. Set `cpu` when MPS is unavailable or unstable. |
 | `WHISPER_MODEL` | whisper.cpp model name used by `scripts/setup_whisper.sh` and whisper mode. |
 | `WHISPER_LANG` | whisper.cpp language argument; normally follows `INPUT_LANG` or `auto`. |
 | `VAD_MODEL` | whisper.cpp VAD model name. |
@@ -203,8 +204,8 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 | `IRODORI_TTS_AUTO_START` | Start Irodori-TTS-Server automatically when it is not already healthy. |
 | `IRODORI_TTS_START_COMMAND` | Optional custom server start command. |
 | `IRODORI_TTS_API_KEY` | Optional API key sent to Irodori-TTS-Server. |
-| `IRODORI_MODEL_DEVICE` | Device used by the Irodori model, default `cpu`. |
-| `IRODORI_CODEC_DEVICE` | Device used by the Irodori codec, default `cpu`. |
+| `IRODORI_MODEL_DEVICE` | Device used by the Irodori model, default `cpu`. Due to a PyTorch bug, `mps` may cause increased memory usage — be cautious of processing load. |
+| `IRODORI_CODEC_DEVICE` | Device used by the Irodori codec, default `cpu`. Due to a PyTorch bug, `mps` may cause increased memory usage — be cautious of processing load. |
 | `IRODORI_TTS_RESPONSE_FORMAT` | Audio response format, default `wav`. |
 | `IRODORI_TTS_SPEED` | Speed value sent to the Irodori speech API. |
 
