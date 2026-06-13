@@ -21,6 +21,7 @@
 
 ### Fixed
 
+- Fixed CAT-Translate-7b GGUF inference adding a duplicate BOS token, which could reduce translation quality and cause wrong-language or prompt-contaminated output.
 - Store VoxCPM2 reference metadata and segment clips under `voxcpm2_*` names instead of `omnivoice_*` names.
 
 ## [9.0.2] - 2026-04-16

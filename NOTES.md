@@ -1,5 +1,11 @@
 # Notes
 
+## 2026-06-13
+
+- Confirmed that the CAT-Translate-7b instruction and chat wrapper match CyberAgent's official 7B template, then fixed the GGUF completion path to pass pre-tokenized input so `llama-cpp-python` does not prepend a second BOS token.
+- Confirmed that the TranslateGemma-12b-it prompt matches Google's structured text-translation template embedded in the GGUF, including its language codes, three newlines before source text, turn markers, and single automatically prepended BOS token; no prompt change was needed.
+- TranslateGemma Q6 inference failed with `llama_decode returned -3` when all layers were offloaded under current Metal memory pressure, while a 32-layer offload completed successfully.
+
 ## 2026-06-08
 
 - Added Irodori-TTS-Server Sway Sampling request options with defaults: `num_steps=8`, `t_schedule_mode=sway`, and `sway_coeff=-1.0`.

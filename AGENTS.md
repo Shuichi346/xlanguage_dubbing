@@ -10,3 +10,5 @@ Project instructions for coding agents working in this repository.
 - Keep `scripts/run_config_matrix.py` aligned with supported values whenever `ASR_ENGINE`, `ENABLE_AUDIO_SEPARATION`, or `TTS_ENGINE` options change.
 - Keep VoxCPM2 in Controllable Cloning mode: pass per-segment `reference_wav_path` only for synthesis, and keep VoxCPM2 reference cache artifacts under `voxcpm2_*` names.
 - Keep Irodori-TTS in server API mode: pass per-segment reference audio as `irodori.ref_wav`, do not send Caption / Style Prompt, and do not set fixed `seconds`.
+- Keep the CAT-Translate-7b prompt aligned with CyberAgent's 7B-specific chat template. Pass the complete prompt as tokens created with `add_bos=False` and `special=True` because the template already contains `<s>`.
+- Keep the TranslateGemma text prompt aligned with the structured template embedded in its GGUF: preserve source/target language codes, three newlines before source text, and Gemma turn markers. Its prompt omits a textual BOS because `llama-cpp-python` prepends one.
