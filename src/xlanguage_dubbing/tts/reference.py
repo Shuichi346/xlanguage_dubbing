@@ -322,8 +322,17 @@ def _collect_reference_prompt_text(reference_seg, segments):
 
 
 def _normalize_reference_engine(tts_engine: str) -> str:
-    return "voxcpm2" if tts_engine.strip().lower() == "voxcpm2" else "omnivoice"
+    normalized = tts_engine.strip().lower()
+    if normalized == "voxcpm2":
+        return "voxcpm2"
+    if normalized in {"irodori", "irodori-tts", "irodori_tts"}:
+        return "irodori"
+    return "omnivoice"
 
 
 def _reference_engine_label(tts_engine: str) -> str:
-    return "VoxCPM2" if tts_engine == "voxcpm2" else "OmniVoice"
+    if tts_engine == "voxcpm2":
+        return "VoxCPM2"
+    if tts_engine == "irodori":
+        return "Irodori"
+    return "OmniVoice"

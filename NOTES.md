@@ -1,8 +1,16 @@
 # Notes
 
+## 2026-06-08
+
+- Added Irodori-TTS-Server Sway Sampling request options with defaults: `num_steps=8`, `t_schedule_mode=sway`, and `sway_coeff=-1.0`.
+- Changed the default Demucs model to `htdemucs` and added `DEMUCS_DEVICE` so Apple Silicon runs can use `mps` while retaining `cpu` as an explicit fallback.
+
 ## 2026-06-07
 
 - Changed VoxCPM2 to Controllable Cloning: generation uses per-segment `reference_wav_path` only, while speaker/segment reference cache artifacts use engine-specific `voxcpm2_*` names.
+- Replaced supported Kokoro-FastAPI selection with `TTS_ENGINE=irodori`.
+- Irodori uses the local `Irodori-TTS-Server` API, sends per-segment reference audio as `irodori.ref_wav`, and intentionally omits Caption / Style Prompt and fixed `seconds`.
+- Added `IRODORI_MODEL_DEVICE` and `IRODORI_CODEC_DEVICE` for Irodori server auto-start; both default to `cpu`.
 
 ## 2026-06-02
 

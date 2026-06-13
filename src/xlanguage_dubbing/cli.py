@@ -12,10 +12,12 @@ from importlib.util import find_spec
 from pathlib import Path
 
 from xlanguage_dubbing.config import (
+    DEMUCS_DEVICE,
+    DEMUCS_MODEL,
     ENABLE_AUDIO_SEPARATION,
     INPUT_LANG,
-    KOKORO_FASTAPI_BASE_URL,
-    KOKORO_FASTAPI_DIR,
+    IRODORI_TTS_BASE_URL,
+    IRODORI_TTS_DIR,
     OUTPUT_LANG,
     TEMP_ROOT,
     TTS_ENGINE,
@@ -36,16 +38,16 @@ from xlanguage_dubbing.utils import (
 )
 
 
-def _is_kokoro_fastapi_tts() -> bool:
-    """Kokoro-FastAPI TTS が選択されているかを返す。"""
-    return TTS_ENGINE in {"kokoro-fastapi", "kokoro_fastapi", "kokoro"}
+def _is_irodori_tts() -> bool:
+    """Irodori-TTS が選択されているかを返す。"""
+    return TTS_ENGINE in {"irodori", "irodori-tts", "irodori_tts"}
 
 
 def _tts_display_name() -> str:
     if TTS_ENGINE == "voxcpm2":
         return "VoxCPM2"
-    if _is_kokoro_fastapi_tts():
-        return "Kokoro-FastAPI"
+    if _is_irodori_tts():
+        return "Irodori-TTS"
     return "OmniVoice"
 
 
@@ -110,36 +112,34 @@ def preflight_checks() -> None:
     if TTS_ENGINE not in {
         "omnivoice",
         "voxcpm2",
-        "kokoro-fastapi",
-        "kokoro_fastapi",
-        "kokoro",
+        "irodori",
+        "irodori-tts",
+        "irodori_tts",
     }:
         raise PipelineError(
             "未知の TTS_ENGINE です: "
-            f"{TTS_ENGINE}（omnivoice / voxcpm2 / kokoro-fastapi を指定）"
+            f"{TTS_ENGINE}（omnivoice / voxcpm2 / irodori を指定）"
         )
 
-    if _is_kokoro_fastapi_tts():
+    if _is_irodori_tts():
         if OUTPUT_LANG != "ja":
             raise PipelineError(
-                "Kokoro-FastAPI は英語→日本語吹き替え専用です。"
+                "Irodori-TTS-500M-v3 は日本語 TTS です。"
                 f" OUTPUT_LANG={OUTPUT_LANG} では使用できません。"
-            )
-        if INPUT_LANG not in {"auto", "en", "en-us", "en_us"}:
-            raise PipelineError(
-                "Kokoro-FastAPI は英語→日本語吹き替え専用です。"
-                f" INPUT_LANG={INPUT_LANG} では使用できません。"
             )
 
     tts_name = _tts_display_name()
     print_step(f"  TTS エンジン: {tts_name}")
-    if _is_kokoro_fastapi_tts():
-        print_step(f"  Kokoro-FastAPI URL: {KOKORO_FASTAPI_BASE_URL}")
-        print_step(f"  Kokoro-FastAPI DIR: {KOKORO_FASTAPI_DIR}")
+    if _is_irodori_tts():
+        print_step(f"  Irodori-TTS URL: {IRODORI_TTS_BASE_URL}")
+        print_step(f"  Irodori-TTS DIR: {IRODORI_TTS_DIR}")
     print_step(
         "  音声分離: "
         f"{'Demucs 有効' if ENABLE_AUDIO_SEPARATION else '無効（元音声を使用）'}"
     )
+    if ENABLE_AUDIO_SEPARATION:
+        print_step(f"  Demucs model: {DEMUCS_MODEL}")
+        print_step(f"  Demucs device: {DEMUCS_DEVICE}")
 
     try:
         import torch

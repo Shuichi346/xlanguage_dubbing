@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 定数・設定値の定義。
 .envから環境変数を読み込み、全設定値を一元管理する。
@@ -50,6 +49,17 @@ def _env_bool(key: str, default: bool) -> bool:
     return v.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _env_choice(key: str, default: str, choices: set[str]) -> str:
+    """環境変数を許可された文字列から取得する。"""
+    v = os.getenv(key)
+    if v is None:
+        return default
+    normalized = v.strip().lower()
+    if normalized in choices:
+        return normalized
+    return default
+
+
 # =========================
 # パス設定
 # =========================
@@ -79,14 +89,15 @@ ASR_ENGINE = _env("ASR_ENGINE", "vibevoice")  # "vibevoice" or "whisper"
 # =========================
 
 ENABLE_AUDIO_SEPARATION = _env_bool("ENABLE_AUDIO_SEPARATION", True)
-DEMUCS_MODEL = _env("DEMUCS_MODEL", "htdemucs_ft").strip() or "htdemucs_ft"
+DEMUCS_MODEL = _env("DEMUCS_MODEL", "htdemucs").strip() or "htdemucs"
+DEMUCS_DEVICE = _env_choice("DEMUCS_DEVICE", "mps", {"cpu", "mps"})
 
 # =========================
 # TTS共通
 # =========================
 
 TTS_ENGINE = _env("TTS_ENGINE", "omnivoice").strip().lower()
-# "omnivoice", "voxcpm2", or "kokoro-fastapi"
+# "omnivoice", "voxcpm2", or "irodori"
 
 # =========================
 # whisper.cpp（CLIバイナリ + VAD）
@@ -144,7 +155,7 @@ CAT_TRANSLATE_N_GPU_LAYERS = _env_int("CAT_TRANSLATE_N_GPU_LAYERS", -1)
 CAT_TRANSLATE_N_CTX = _env_int("CAT_TRANSLATE_N_CTX", 4096)
 CAT_TRANSLATE_RETRIES = _env_int("CAT_TRANSLATE_RETRIES", 3)
 CAT_TRANSLATE_RETRY_BACKOFF_SEC = _env_float("CAT_TRANSLATE_RETRY_BACKOFF_SEC", 1.5)
-CAT_TRANSLATE_REPEAT_PENALTY = _env_float("CAT_TRANSLATE_REPEAT_PENALTY", 1.2)
+CAT_TRANSLATE_REPEAT_PENALTY = _env_float("CAT_TRANSLATE_REPEAT_PENALTY", 1.1)
 
 # =========================
 # TranslateGemma（多言語翻訳）
@@ -160,7 +171,7 @@ TRANSLATEGEMMA_N_GPU_LAYERS = _env_int("TRANSLATEGEMMA_N_GPU_LAYERS", -1)
 TRANSLATEGEMMA_N_CTX = _env_int("TRANSLATEGEMMA_N_CTX", 2048)
 TRANSLATEGEMMA_RETRIES = _env_int("TRANSLATEGEMMA_RETRIES", 3)
 TRANSLATEGEMMA_RETRY_BACKOFF_SEC = _env_float("TRANSLATEGEMMA_RETRY_BACKOFF_SEC", 1.5)
-TRANSLATEGEMMA_REPEAT_PENALTY = _env_float("TRANSLATEGEMMA_REPEAT_PENALTY", 1.2)
+TRANSLATEGEMMA_REPEAT_PENALTY = _env_float("TRANSLATEGEMMA_REPEAT_PENALTY", 1.1)
 
 # =========================
 # OmniVoice（ボイスクローン + 再生時間制御）
@@ -196,32 +207,34 @@ VOXCPM2_QUALITY_RETRIES = _env_int("VOXCPM2_QUALITY_RETRIES", 1)
 VOXCPM2_SAMPLE_RATE = 48000
 
 # =========================
-# Kokoro-FastAPI（速度優先・非ボイスクローン TTS）
+# Irodori-TTS-Server（日本語 48kHz ボイスクローン TTS）
 # =========================
 
-KOKORO_FASTAPI_BASE_URL = _env(
-    "KOKORO_FASTAPI_BASE_URL", "http://localhost:8880"
+IRODORI_TTS_SERVER_HOST = _env("IRODORI_TTS_SERVER_HOST", "0.0.0.0").strip()
+IRODORI_TTS_SERVER_PORT = _env_int("IRODORI_TTS_SERVER_PORT", 8088)
+IRODORI_TTS_BASE_URL = _env(
+    "IRODORI_TTS_BASE_URL", f"http://localhost:{IRODORI_TTS_SERVER_PORT}"
 ).strip().rstrip("/")
-KOKORO_FASTAPI_DIR = Path(
-    _env("KOKORO_FASTAPI_DIR", "./Kokoro-FastAPI")
+IRODORI_TTS_DIR = Path(
+    _env("IRODORI_TTS_DIR", "./Irodori-TTS-Server")
 ).expanduser()
-KOKORO_FASTAPI_AUTO_START = _env_bool("KOKORO_FASTAPI_AUTO_START", True)
-KOKORO_FASTAPI_START_COMMAND = _env("KOKORO_FASTAPI_START_COMMAND", "").strip()
-KOKORO_FASTAPI_DOWNLOAD_UNIDIC = _env_bool(
-    "KOKORO_FASTAPI_DOWNLOAD_UNIDIC", True
-)
-KOKORO_FASTAPI_START_TIMEOUT_SEC = _env_int(
-    "KOKORO_FASTAPI_START_TIMEOUT_SEC", 180
-)
-KOKORO_FASTAPI_REQUEST_TIMEOUT_SEC = _env_int(
-    "KOKORO_FASTAPI_REQUEST_TIMEOUT_SEC", 300
-)
-KOKORO_FASTAPI_MODEL = _env("KOKORO_FASTAPI_MODEL", "kokoro").strip()
-KOKORO_FASTAPI_VOICE = _env("KOKORO_FASTAPI_VOICE", "jf_alpha").strip()
-KOKORO_FASTAPI_RESPONSE_FORMAT = _env(
-    "KOKORO_FASTAPI_RESPONSE_FORMAT", "wav"
+IRODORI_TTS_AUTO_START = _env_bool("IRODORI_TTS_AUTO_START", True)
+IRODORI_TTS_START_COMMAND = _env("IRODORI_TTS_START_COMMAND", "").strip()
+IRODORI_TTS_START_TIMEOUT_SEC = _env_int("IRODORI_TTS_START_TIMEOUT_SEC", 300)
+IRODORI_TTS_REQUEST_TIMEOUT_SEC = _env_int("IRODORI_TTS_REQUEST_TIMEOUT_SEC", 600)
+IRODORI_TTS_API_KEY = _env("IRODORI_TTS_API_KEY", "").strip()
+IRODORI_TTS_MODEL = _env("IRODORI_TTS_MODEL", "irodori-tts").strip()
+IRODORI_MODEL_DEVICE = _env("IRODORI_MODEL_DEVICE", "cpu").strip() or "cpu"
+IRODORI_CODEC_DEVICE = _env("IRODORI_CODEC_DEVICE", "cpu").strip() or "cpu"
+IRODORI_TTS_RESPONSE_FORMAT = _env(
+    "IRODORI_TTS_RESPONSE_FORMAT", "wav"
 ).strip().lower()
-KOKORO_FASTAPI_SPEED = _env_float("KOKORO_FASTAPI_SPEED", 1.0)
+IRODORI_TTS_SPEED = _env_float("IRODORI_TTS_SPEED", 1.0)
+IRODORI_TTS_NUM_STEPS = _env_int("IRODORI_TTS_NUM_STEPS", 8)
+IRODORI_TTS_T_SCHEDULE_MODE = _env_choice(
+    "IRODORI_TTS_T_SCHEDULE_MODE", "sway", {"linear", "sway"}
+)
+IRODORI_TTS_SWAY_COEFF = _env_float("IRODORI_TTS_SWAY_COEFF", -1.0)
 
 # =========================
 # 音声設定（最終出力ミックス用）
