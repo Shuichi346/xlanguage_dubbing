@@ -312,9 +312,12 @@ def _translate_with_cat(text: str, source_lang: str, target_lang: str) -> str:
     model = _get_cat_model()
 
     prompt = _build_cat_translate_prompt(text, source_lang, target_lang)
+    # The official 7B chat template already starts with <s>. Passing the raw
+    # string makes llama-cpp-python prepend another BOS token.
+    prompt_tokens = model.tokenize(prompt.encode("utf-8"), add_bos=False, special=True)
 
     response = model(
-        prompt,
+        prompt_tokens,
         max_tokens=CAT_TRANSLATE_N_CTX // 2,
         temperature=0.0,
         top_p=1.0,
