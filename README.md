@@ -17,8 +17,17 @@
 
 The repository is aimed at local media workflows where model inference, translation, TTS, checkpointing, and final rendering all run on the user's machine.
 
+## Demo
+
+This demo shows the result of translating and dubbing a short English video into Japanese.
+
+<a href="https://youtube.com/shorts/amYVIorgOQQ?si=FEm-2MLur4STlzdu">
+  <img src="https://img.youtube.com/vi/amYVIorgOQQ/hqdefault.jpg" alt="English-to-Japanese dubbing demo" width="250">
+</a>
+
 ## Contents
 
+- [Demo](#demo)
 - [Features](#features)
 - [How It Works](#how-it-works)
 - [Tech Stack](#tech-stack)

@@ -17,8 +17,17 @@
 
 このリポジトリは、モデル推論・翻訳・TTS・チェックポイント・最終レンダリングをすべてユーザーのマシン上で実行するローカルメディアワークフローを対象としています。
 
+## デモ動画
+
+英語の短い動画を日本語に翻訳・吹き替えした結果です。
+
+<a href="https://youtube.com/shorts/amYVIorgOQQ?si=FEm-2MLur4STlzdu">
+  <img src="https://img.youtube.com/vi/amYVIorgOQQ/hqdefault.jpg" alt="英語から日本語への吹き替えデモ動画" width="250">
+</a>
+
 ## 目次
 
+- [デモ動画](#デモ動画)
 - [機能](#機能)
 - [動作の仕組み](#動作の仕組み)
 - [技術スタック](#技術スタック)
