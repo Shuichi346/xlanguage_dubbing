@@ -6,13 +6,14 @@
 
 - Added optional Demucs voice/background separation before ASR and TTS reference extraction.
 - Added `ENABLE_AUDIO_SEPARATION`, `DEMUCS_MODEL`, and `DEMUCS_DEVICE` environment settings; disabled mode keeps the previous raw-audio workflow.
-- Added `TTS_ENGINE=irodori` for Japanese Irodori-TTS-500M-v3 voice cloning through Irodori-TTS-Server.
+- Added `TTS_ENGINE=irodori` for Japanese Irodori-TTS-v4-Small voice cloning through Irodori-TTS-Server.
 - Added `IRODORI_MODEL_DEVICE` and `IRODORI_CODEC_DEVICE` settings, both defaulting to `cpu`.
 - Added Irodori Sway Sampling settings: `IRODORI_TTS_NUM_STEPS`, `IRODORI_TTS_T_SCHEDULE_MODE`, and `IRODORI_TTS_SWAY_COEFF`.
 - Added `scripts/run_config_matrix.py` for developer verification across all supported `ASR_ENGINE`, `ENABLE_AUDIO_SEPARATION`, and `TTS_ENGINE` combinations on `input_videos/test.mp4`.
 
 ### Changed
 
+- Updated the default Irodori checkpoint to `Aratako/Irodori-TTS-v4-Small` while preserving per-segment `irodori.ref_wav` and the `8`-step Sway Sampling profile.
 - Changed the default Demucs model from `htdemucs_ft` to faster `htdemucs`.
 - Changed `TTS_ENGINE=voxcpm2` synthesis from Ultimate Cloning to Controllable Cloning by using per-segment `reference_wav_path` without prompt audio/text.
 - Separated background audio is now mixed at full volume; `ORIGINAL_VOLUME` only attenuates raw original audio when separation is disabled.

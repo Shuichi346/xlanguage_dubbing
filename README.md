@@ -213,6 +213,7 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 | `IRODORI_TTS_AUTO_START` | Start Irodori-TTS-Server automatically when it is not already healthy. |
 | `IRODORI_TTS_START_COMMAND` | Optional custom server start command. |
 | `IRODORI_TTS_API_KEY` | Optional API key sent to Irodori-TTS-Server. |
+| `IRODORI_HF_CHECKPOINT` | Hugging Face checkpoint used by Irodori-TTS-Server, default `Aratako/Irodori-TTS-v4-Small`. |
 | `IRODORI_MODEL_DEVICE` | Device used by the Irodori model, default `cpu`. Due to a PyTorch bug, `mps` may cause increased memory usage — be cautious of processing load. |
 | `IRODORI_CODEC_DEVICE` | Device used by the Irodori codec, default `cpu`. Due to a PyTorch bug, `mps` may cause increased memory usage — be cautious of processing load. |
 | `IRODORI_TTS_RESPONSE_FORMAT` | Audio response format, default `wav`. |
@@ -238,7 +239,7 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 | `voxcpm2` | You want VoxCPM2 Controllable Cloning behavior. | Passes per-segment `reference_wav_path` only; prompt audio/text is not sent to VoxCPM2. |
 | `irodori` | You want Japanese cloned TTS through Irodori-TTS-Server. | Recommended here for English-to-Japanese jobs, only allowed with `OUTPUT_LANG=ja`, and sends per-segment reference audio as `irodori.ref_wav`. |
 
-Irodori mode sends Sway Sampling options by default (`num_steps=8`, `t_schedule_mode=sway`, `sway_coeff=-1.0`). It intentionally does not send Caption, Style Prompt, or fixed `seconds`; the server duration predictor is used.
+Irodori mode uses `Aratako/Irodori-TTS-v4-Small` and sends its faster Sway Sampling options by default (`num_steps=8`, `t_schedule_mode=sway`, `sway_coeff=-1.0`). It intentionally does not send Caption, Style Prompt, or fixed `seconds`; the server duration predictor is used.
 
 ### Translation
 
@@ -326,7 +327,7 @@ uv sync --extra cpu
 The default server start command is:
 
 ```bash
-uv run python -m irodori_openai_tts --host 0.0.0.0 --port 8088
+uv run --no-sync python -m irodori_openai_tts --host 0.0.0.0 --port 8088
 ```
 
 If startup still fails, inspect:

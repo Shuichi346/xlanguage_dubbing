@@ -124,7 +124,7 @@ def preflight_checks() -> None:
     if _is_irodori_tts():
         if OUTPUT_LANG != "ja":
             raise PipelineError(
-                "Irodori-TTS-500M-v3 は日本語 TTS です。"
+                "Irodori-TTS-v4-Small は日本語 TTS です。"
                 f" OUTPUT_LANG={OUTPUT_LANG} では使用できません。"
             )
 

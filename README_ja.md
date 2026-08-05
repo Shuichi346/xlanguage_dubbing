@@ -213,6 +213,7 @@ uv run xlanguage-dubbing --generate-script
 | `IRODORI_TTS_AUTO_START` | サーバーが正常稼働していない場合に Irodori-TTS-Server を自動起動します。 |
 | `IRODORI_TTS_START_COMMAND` | オプションのカスタムサーバー起動コマンド。 |
 | `IRODORI_TTS_API_KEY` | Irodori-TTS-Server に送信するオプションの API キー。 |
+| `IRODORI_HF_CHECKPOINT` | Irodori-TTS-Server が使う Hugging Face チェックポイント。デフォルトは `Aratako/Irodori-TTS-v4-Small`。 |
 | `IRODORI_MODEL_DEVICE` | Irodori モデルの実行デバイス。デフォルトは `cpu`。Pytorchのバグにより`mps`はメモリー増加で処理負荷注意。
  |
 | `IRODORI_CODEC_DEVICE` | Irodori コーデックの実行デバイス。デフォルトは `cpu`。Pytorchのバグにより`mps`はメモリー増加で処理負荷注意。
@@ -240,7 +241,7 @@ uv run xlanguage-dubbing --generate-script
 | `voxcpm2` | VoxCPM2 のコントローラブルクローニング動作を使いたい場合。 | セグメントごとの `reference_wav_path` のみを渡します。プロンプト音声／テキストは VoxCPM2 に送信されません。 |
 | `irodori` | Irodori-TTS-Server を通じて日本語クローン TTS を使いたい場合。 | ここでは英日ジョブに推奨。`OUTPUT_LANG=ja` の場合のみ許可され、セグメントごとの参照音声を `irodori.ref_wav` として送信します。 |
 
-Irodori モードはデフォルトで Sway Sampling オプション（`num_steps=8`、`t_schedule_mode=sway`、`sway_coeff=-1.0`）を送信します。意図的に Caption・Style Prompt・固定 `seconds` は送信しません。サーバーの長さ予測機能を使用します。
+Irodori モードは `Aratako/Irodori-TTS-v4-Small` を使用し、高速化用の Sway Sampling オプション（`num_steps=8`、`t_schedule_mode=sway`、`sway_coeff=-1.0`）を送信します。意図的に Caption・Style Prompt・固定 `seconds` は送信しません。サーバーの長さ予測機能を使用します。
 
 ### 翻訳
 
@@ -328,7 +329,7 @@ uv sync --extra cpu
 デフォルトのサーバー起動コマンドは以下の通りです：
 
 ```bash
-uv run python -m irodori_openai_tts --host 0.0.0.0 --port 8088
+uv run --no-sync python -m irodori_openai_tts --host 0.0.0.0 --port 8088
 ```
 
 それでも起動に失敗する場合は、以下を確認してください：

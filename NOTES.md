@@ -1,5 +1,10 @@
 # Notes
 
+## 2026-08-05
+
+- Updated Irodori-TTS-Server auto-start and generated launch scripts to use `Aratako/Irodori-TTS-v4-Small` with `uv run --no-sync`.
+- Preserved per-segment `irodori.ref_wav` requests and the low-latency `num_steps=8`, `t_schedule_mode=sway`, `sway_coeff=-1.0` sampling profile.
+
 ## 2026-06-13
 
 - Confirmed that the CAT-Translate-7b instruction and chat wrapper match CyberAgent's official 7B template, then fixed the GGUF completion path to pass pre-tokenized input so `llama-cpp-python` does not prepend a second BOS token.

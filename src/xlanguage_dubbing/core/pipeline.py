@@ -98,13 +98,13 @@ def _get_tts_engine_display_name() -> str:
 
 
 def _validate_tts_language_pair(detected_lang: str) -> None:
-    """Irodori-TTS-500M-v3 は日本語 TTS として扱う。"""
+    """Irodori-TTS-v4-Small は日本語 TTS として扱う。"""
     if not _is_irodori_tts():
         return
 
     if OUTPUT_LANG != "ja":
         raise PipelineError(
-            "Irodori-TTS-500M-v3 は日本語 TTS です。"
+            "Irodori-TTS-v4-Small は日本語 TTS です。"
             f" OUTPUT_LANG={OUTPUT_LANG} では使用できません。"
         )
 

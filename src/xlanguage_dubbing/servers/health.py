@@ -11,6 +11,7 @@ from pathlib import Path
 
 from xlanguage_dubbing.config import (
     IRODORI_CODEC_DEVICE,
+    IRODORI_HF_CHECKPOINT,
     IRODORI_MODEL_DEVICE,
     IRODORI_TTS_DIR,
     IRODORI_TTS_SERVER_HOST,
@@ -36,7 +37,7 @@ def generate_start_script(output_path: Path) -> None:
     """サーバー起動用シェルスクリプトを生成する。"""
     if _is_irodori_tts():
         start_command = (
-            "exec uv run python -m irodori_openai_tts "
+            "exec uv run --no-sync python -m irodori_openai_tts "
             f'--host "{IRODORI_TTS_SERVER_HOST}" '
             f'--port "{IRODORI_TTS_SERVER_PORT}"'
         )
@@ -51,6 +52,7 @@ set -euo pipefail
 
 export IRODORI_MODEL_DEVICE={shlex.quote(IRODORI_MODEL_DEVICE)}
 export IRODORI_CODEC_DEVICE={shlex.quote(IRODORI_CODEC_DEVICE)}
+export IRODORI_HF_CHECKPOINT={shlex.quote(IRODORI_HF_CHECKPOINT)}
 
 cd "{IRODORI_TTS_DIR}"
 {start_command}
