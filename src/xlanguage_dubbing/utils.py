@@ -64,8 +64,7 @@ def run_cmd(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProces
 
     proc = subprocess.run(
         resolved_cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
     )
     if check and proc.returncode != 0:

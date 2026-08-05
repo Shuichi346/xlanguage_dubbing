@@ -12,7 +12,7 @@ import gc
 import re
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from xlanguage_dubbing.config import (
     VIBEVOICE_CHUNK_MAX_SECONDS,
@@ -79,7 +79,7 @@ def _get_vibevoice_model():
     _VIBEVOICE_MODEL = load_model(VIBEVOICE_MODEL)
     mx.eval(_VIBEVOICE_MODEL.parameters())
     model_memory_gb = mx.metal.get_active_memory() / (1024 ** 3)
-    print_step(f"  VibeVoice-ASR モデルのロード完了")
+    print_step("  VibeVoice-ASR モデルのロード完了")
     print_step(f"  モデルロード後メモリ: {model_memory_gb:.2f} GB")
     return _VIBEVOICE_MODEL
 
@@ -123,7 +123,7 @@ def _calculate_encoder_chunk_seconds(
     return chunk_seconds
 
 
-def _chunked_encode_speech(model, audio_tensor, chunk_seconds: int) -> "mx.array":
+def _chunked_encode_speech(model, audio_tensor, chunk_seconds: int) -> Any:
     """音声エンコーダをチャンク単位で実行する。"""
     import mlx.core as mx
 

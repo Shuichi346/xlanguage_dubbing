@@ -176,7 +176,7 @@ def split_segments_by_spacy_sentences(segments: List[Segment]) -> List[Segment]:
         dur = seg.duration
         acc = 0.0
 
-        for i, (sent, w) in enumerate(zip(sents, weights)):
+        for i, (sent, w) in enumerate(zip(sents, weights, strict=True)):
             if i == len(sents) - 1:
                 sent_start = start + dur * (acc / total_w)
                 sent_end = seg.end

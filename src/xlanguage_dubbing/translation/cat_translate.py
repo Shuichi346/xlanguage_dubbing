@@ -39,7 +39,6 @@ from xlanguage_dubbing.core.progress import ProgressStore
 from xlanguage_dubbing.audio.segment_io import load_segments_json, save_segments_json_atomic
 from xlanguage_dubbing.lang_utils import (
     detect_language_from_text,
-    is_ja_en_pair,
     normalize_lang_code,
     select_translation_engine,
 )

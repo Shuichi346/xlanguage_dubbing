@@ -4,6 +4,7 @@
 
 - Updated Irodori-TTS-Server auto-start and generated launch scripts to use `Aratako/Irodori-TTS-v4-Small` with `uv run --no-sync`.
 - Preserved per-segment `irodori.ref_wav` requests and the low-latency `num_steps=8`, `t_schedule_mode=sway`, `sway_coeff=-1.0` sampling profile.
+- Resolved the actionable Ruff findings in VibeVoice type annotations, spaCy sentence allocation, CAT-Translate imports, and subprocess output capture; targeted lint, compilation, and behavior checks passed.
 
 ## 2026-06-13
 
