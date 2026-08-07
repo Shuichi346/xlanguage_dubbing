@@ -1,5 +1,11 @@
 # Notes
 
+## 2026-08-07
+
+- Confirmed that Irodori-TTS-v4-Small supports at most 120 seconds of combined reference audio and recommends concatenating multiple short utterances from the same speaker.
+- Replaced Irodori per-segment references with one cached long reference per speaker; OmniVoice and VoxCPM2 reference behavior remained unchanged.
+- Did not add DeepFilterNet3 because DeepFilterNet 0.5.6 requires `numpy<2` while pyannote-audio 4.x requires `numpy>=2`; the project dependency set cannot resolve both safely.
+
 ## 2026-08-05
 
 - Updated Irodori-TTS-Server auto-start and generated launch scripts to use `Aratako/Irodori-TTS-v4-Small` with `uv run --no-sync`.

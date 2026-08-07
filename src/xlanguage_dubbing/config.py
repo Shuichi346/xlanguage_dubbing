@@ -238,6 +238,10 @@ IRODORI_TTS_T_SCHEDULE_MODE = _env_choice(
     "IRODORI_TTS_T_SCHEDULE_MODE", "sway", {"linear", "sway"}
 )
 IRODORI_TTS_SWAY_COEFF = _env_float("IRODORI_TTS_SWAY_COEFF", -1.0)
+IRODORI_REFERENCE_MAX_SEC = min(
+    120.0,
+    max(1.0, _env_float("IRODORI_REFERENCE_MAX_SEC", 120.0)),
+)
 
 # =========================
 # 音声設定（最終出力ミックス用）

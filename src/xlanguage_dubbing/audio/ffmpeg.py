@@ -90,6 +90,63 @@ def extract_audio_segment(
     run_cmd(cmd)
 
 
+def extract_concatenated_audio_segments(
+    media_in: Path,
+    out_wav: Path,
+    *,
+    ranges: List[tuple[float, float]],
+    sample_rate: int = 48000,
+    channels: int = 1,
+) -> None:
+    """Extract multiple source ranges and concatenate them into one PCM WAV."""
+    valid_ranges = [
+        (max(0.0, float(start)), max(0.0, float(end)))
+        for start, end in ranges
+        if float(end) > float(start)
+    ]
+    if not valid_ranges:
+        raise PipelineError("連結対象の音声区間が空です。")
+
+    if len(valid_ranges) == 1:
+        start, end = valid_ranges[0]
+        extract_audio_segment(
+            media_in,
+            out_wav,
+            start=start,
+            end=end,
+            sample_rate=sample_rate,
+            channels=channels,
+        )
+        return
+
+    which_or_raise("ffmpeg")
+    ensure_dir(out_wav.parent)
+
+    select_expression = "+".join(
+        f"between(t\\,{start:.6f}\\,{end:.6f})"
+        for start, end in valid_ranges
+    )
+    target_duration = sum(end - start for start, end in valid_ranges)
+    audio_filter = (
+        "asetpts=PTS-STARTPTS,"
+        f"aselect={select_expression},"
+        "asetpts=N/SR/TB,"
+        f"atrim=duration={target_duration:.6f},"
+        "asetpts=PTS-STARTPTS"
+    )
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(media_in),
+        "-af", audio_filter,
+        "-ac", str(channels),
+        "-ar", str(sample_rate),
+        "-c:a", "pcm_s16le",
+        str(out_wav),
+    ]
+    run_cmd(cmd)
+
+
 def build_atempo_filter(speed_factor: float) -> str:
     """atempoフィルタ文字列を生成する。"""
     if speed_factor <= 0:

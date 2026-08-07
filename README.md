@@ -53,7 +53,7 @@ This demo shows the result of translating and dubbing a short English video into
 - Normalizes ASR segments with merge rules, spaCy sentence splitting, and sentence-unit merging.
 - Selects CAT-Translate for English/Japanese pairs and TranslateGemma for other language pairs.
 - Provides three TTS engines: OmniVoice, VoxCPM2, and Irodori-TTS-Server.
-- Builds speaker and per-segment reference audio for cloned speech synthesis.
+- Builds engine-specific speaker and per-segment reference audio for cloned speech synthesis.
 - Retimes the source video to match generated TTS durations.
 - Saves resumable checkpoints and intermediate artifacts per video.
 - Includes a configuration-matrix runner for supported ASR, audio-source, and TTS combinations.
@@ -221,6 +221,7 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 | `IRODORI_TTS_NUM_STEPS` | Irodori diffusion steps, default `8` for Sway Sampling. |
 | `IRODORI_TTS_T_SCHEDULE_MODE` | Irodori sampling schedule, default `sway`. |
 | `IRODORI_TTS_SWAY_COEFF` | Irodori Sway Sampling coefficient, default `-1.0`. |
+| `IRODORI_REFERENCE_MAX_SEC` | Maximum combined Irodori reference length per speaker. Capped at the model limit of 120 seconds. |
 
 ## Engine Notes
 
@@ -237,9 +238,9 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 |---|---|---|
 | `omnivoice` | You want the default process-internal cloned TTS path. | Uses speaker and per-segment reference audio plus reference text where available. |
 | `voxcpm2` | You want VoxCPM2 Controllable Cloning behavior. | Passes per-segment `reference_wav_path` only; prompt audio/text is not sent to VoxCPM2. |
-| `irodori` | You want Japanese cloned TTS through Irodori-TTS-Server. | Recommended here for English-to-Japanese jobs, only allowed with `OUTPUT_LANG=ja`, and sends per-segment reference audio as `irodori.ref_wav`. |
+| `irodori` | You want Japanese cloned TTS through Irodori-TTS-Server. | Recommended here for English-to-Japanese jobs, only allowed with `OUTPUT_LANG=ja`, and reuses one long reference per speaker for every utterance. |
 
-Irodori mode uses `Aratako/Irodori-TTS-v4-Small` and sends its faster Sway Sampling options by default (`num_steps=8`, `t_schedule_mode=sway`, `sway_coeff=-1.0`). It intentionally does not send Caption, Style Prompt, or fixed `seconds`; the server duration predictor is used.
+Irodori mode uses `Aratako/Irodori-TTS-v4-Small`. It concatenates multiple short utterances from each speaker in chronological order into a single reference of up to 120 seconds, then sends the same file as `irodori.ref_wav` for every utterance by that speaker. Irodori also sends its faster Sway Sampling options by default (`num_steps=8`, `t_schedule_mode=sway`, `sway_coeff=-1.0`). It intentionally does not send Caption, Style Prompt, or fixed `seconds`; the server duration predictor is used.
 
 ### Translation
 

@@ -9,16 +9,18 @@
 - Added `TTS_ENGINE=irodori` for Japanese Irodori-TTS-v4-Small voice cloning through Irodori-TTS-Server.
 - Added `IRODORI_MODEL_DEVICE` and `IRODORI_CODEC_DEVICE` settings, both defaulting to `cpu`.
 - Added Irodori Sway Sampling settings: `IRODORI_TTS_NUM_STEPS`, `IRODORI_TTS_T_SCHEDULE_MODE`, and `IRODORI_TTS_SWAY_COEFF`.
+- Added `IRODORI_REFERENCE_MAX_SEC` for Irodori long-reference construction.
 - Added `scripts/run_config_matrix.py` for developer verification across all supported `ASR_ENGINE`, `ENABLE_AUDIO_SEPARATION`, and `TTS_ENGINE` combinations on `input_videos/test.mp4`.
 
 ### Changed
 
-- Updated the default Irodori checkpoint to `Aratako/Irodori-TTS-v4-Small` while preserving per-segment `irodori.ref_wav` and the `8`-step Sway Sampling profile.
+- Updated the default Irodori checkpoint to `Aratako/Irodori-TTS-v4-Small` and preserved the `8`-step Sway Sampling profile.
+- Changed Irodori cloning to concatenate up to 120 seconds of source utterances per speaker and reuse that speaker reference for every synthesized utterance.
 - Changed the default Demucs model from `htdemucs_ft` to faster `htdemucs`.
 - Changed `TTS_ENGINE=voxcpm2` synthesis from Ultimate Cloning to Controllable Cloning by using per-segment `reference_wav_path` without prompt audio/text.
 - Separated background audio is now mixed at full volume; `ORIGINAL_VOLUME` only attenuates raw original audio when separation is disabled.
 - Replaced supported `TTS_ENGINE=kokoro-fastapi` selection with `TTS_ENGINE=irodori`.
-- Irodori mode uses per-segment reference audio via `irodori.ref_wav` and sends Sway Sampling options by default; caption/style prompt and fixed `seconds` options are not sent.
+- Irodori mode sends the speaker-level long reference via `irodori.ref_wav` and sends Sway Sampling options by default; caption/style prompt and fixed `seconds` options are not sent.
 
 ### Fixed
 

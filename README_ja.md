@@ -223,6 +223,7 @@ uv run xlanguage-dubbing --generate-script
 | `IRODORI_TTS_NUM_STEPS` | Irodori の diffusion step 数。Sway Sampling 用にデフォルトは `8`。 |
 | `IRODORI_TTS_T_SCHEDULE_MODE` | Irodori のサンプリングスケジュール。デフォルトは `sway`。 |
 | `IRODORI_TTS_SWAY_COEFF` | Irodori の Sway Sampling 係数。デフォルトは `-1.0`。 |
+| `IRODORI_REFERENCE_MAX_SEC` | Irodori で話者ごとに連結する参照音声の上限。モデル上限の120秒以下に制限されます。 |
 
 ## エンジンについて
 
@@ -239,9 +240,9 @@ uv run xlanguage-dubbing --generate-script
 |---|---|---|
 | `omnivoice` | デフォルトのプロセス内クローン TTS パスを使いたい場合。 | 話者ごとおよびセグメントごとの参照音声と、利用可能な場合は参照テキストも使用します。 |
 | `voxcpm2` | VoxCPM2 のコントローラブルクローニング動作を使いたい場合。 | セグメントごとの `reference_wav_path` のみを渡します。プロンプト音声／テキストは VoxCPM2 に送信されません。 |
-| `irodori` | Irodori-TTS-Server を通じて日本語クローン TTS を使いたい場合。 | ここでは英日ジョブに推奨。`OUTPUT_LANG=ja` の場合のみ許可され、セグメントごとの参照音声を `irodori.ref_wav` として送信します。 |
+| `irodori` | Irodori-TTS-Server を通じて日本語クローン TTS を使いたい場合。 | ここでは英日ジョブに推奨。`OUTPUT_LANG=ja` の場合のみ許可され、話者ごとの長尺参照音声をその話者の全セリフで再利用します。 |
 
-Irodori モードは `Aratako/Irodori-TTS-v4-Small` を使用し、高速化用の Sway Sampling オプション（`num_steps=8`、`t_schedule_mode=sway`、`sway_coeff=-1.0`）を送信します。意図的に Caption・Style Prompt・固定 `seconds` は送信しません。サーバーの長さ予測機能を使用します。
+Irodori モードは `Aratako/Irodori-TTS-v4-Small` を使用します。同一話者の複数の短い発話を120秒まで時系列順に連結し、同じファイルをその話者の全セリフの `irodori.ref_wav` に使います。また、高速化用の Sway Sampling オプション（`num_steps=8`、`t_schedule_mode=sway`、`sway_coeff=-1.0`）を送信します。意図的に Caption・Style Prompt・固定 `seconds` は送信しません。サーバーの長さ予測機能を使用します。
 
 ### 翻訳
 

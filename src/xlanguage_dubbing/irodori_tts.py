@@ -4,7 +4,7 @@ Irodori-TTS-Server による日本語ボイスクローン TTS。
 
 サーバーは OpenAI 互換の /v1/audio/speech API を提供する。
 このクライアントは caption/style prompt と seconds を送らず、
-セグメント単位リファレンス音声を irodori.ref_wav として渡す。
+話者ごとの長尺リファレンス音声を irodori.ref_wav として渡す。
 """
 
 from __future__ import annotations
@@ -311,11 +311,9 @@ def generate_segment_tts_irodori(
                 duration_sec=float(duration),
             )
 
-    seg_ref_path = ref_cache.get_omnivoice_segment_reference_path(segno)
-    if seg_ref_path is not None:
-        reference_speech = seg_ref_path
-    else:
-        reference_speech = ref_cache.get_omnivoice_reference_path(seg.speaker_id)
+    reference_speech = ref_cache.get_irodori_speaker_reference_path(
+        seg.speaker_id
+    )
 
     if reference_speech is None:
         print_step(

@@ -7,11 +7,17 @@
 from __future__ import annotations
 
 import gc
+import hashlib
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
-from xlanguage_dubbing.audio.ffmpeg import extract_audio_segment
+from xlanguage_dubbing.audio.ffmpeg import (
+    extract_audio_segment,
+    extract_concatenated_audio_segments,
+)
 from xlanguage_dubbing.config import (
+    IRODORI_REFERENCE_MAX_SEC,
+    MIN_SEGMENT_SEC,
     OMNIVOICE_REFERENCE_MAX_SEC,
     OMNIVOICE_REFERENCE_MIN_SEC,
     OMNIVOICE_REFERENCE_TARGET_SEC,
@@ -37,6 +43,8 @@ class SpeakerReferenceCache:
         self._omnivoice_prompt_texts: Dict[str, str] = {}
         self._omnivoice_segment_refs: Dict[int, Path] = {}
         self._omnivoice_segment_prompt_texts: Dict[int, str] = {}
+        self._irodori_speaker_refs: Dict[str, Path] = {}
+        self._irodori_speaker_ref_durations: Dict[str, float] = {}
         ensure_dir(cache_dir)
 
     @property
@@ -65,6 +73,18 @@ class SpeakerReferenceCache:
     def get_omnivoice_segment_prompt_text(self, segno: int) -> str:
         return self._omnivoice_segment_prompt_texts.get(segno, "")
 
+    def get_irodori_speaker_reference_path(
+        self,
+        speaker_id: str,
+    ) -> Optional[Path]:
+        path = self._irodori_speaker_refs.get(speaker_id)
+        if path and path.exists():
+            return path.resolve()
+        return None
+
+    def get_irodori_speaker_reference_duration(self, speaker_id: str) -> float:
+        return self._irodori_speaker_ref_durations.get(speaker_id, 0.0)
+
     def reload_speaker_references(self, speaker_ids: Set[str]) -> None:
         for speaker_id in speaker_ids:
             ov_wav = self._cache_dir / f"ovref_{speaker_id}.wav"
@@ -72,6 +92,68 @@ class SpeakerReferenceCache:
                 self._omnivoice_refs[speaker_id] = ov_wav
         self._load_omnivoice_prompt_meta()
         self._load_omnivoice_segment_meta()
+
+    def build_irodori_speaker_references(
+        self,
+        media_path: Path,
+        segments: List[Segment],
+    ) -> None:
+        """Build one long reference from multiple short utterances per speaker."""
+        speakers: Dict[str, List[Segment]] = {}
+        for segment in segments:
+            if segment.speaker_id:
+                speakers.setdefault(segment.speaker_id, []).append(segment)
+
+        reference_meta: Dict[str, Dict[str, object]] = {}
+        for speaker_id, speaker_segments in speakers.items():
+            ranges = _select_irodori_reference_ranges(
+                speaker_segments,
+                max_sec=IRODORI_REFERENCE_MAX_SEC,
+            )
+            if not ranges:
+                print_step(f"  警告: Irodori リファレンスなし: {speaker_id}")
+                continue
+
+            cache_key = _speaker_cache_key(speaker_id)
+            ranges_key = _reference_ranges_cache_key(ranges)
+            reference_wav = (
+                self._cache_dir
+                / f"irodori_longref_{cache_key}_{ranges_key}.wav"
+            )
+            duration = sum(end - start for start, end in ranges)
+
+            if not reference_wav.exists():
+                extract_concatenated_audio_segments(
+                    media_path,
+                    reference_wav,
+                    ranges=ranges,
+                    sample_rate=48000,
+                    channels=1,
+                )
+
+            if not reference_wav.exists() or reference_wav.stat().st_size <= 100:
+                reference_wav.unlink(missing_ok=True)
+                print_step(f"  警告: Irodori リファレンス生成失敗: {speaker_id}")
+                continue
+
+            self._irodori_speaker_refs[speaker_id] = reference_wav
+            self._irodori_speaker_ref_durations[speaker_id] = duration
+            reference_meta[speaker_id] = {
+                "reference_wav": reference_wav.name,
+                "duration_sec": duration,
+                "ranges": [
+                    {"start": start, "end": end} for start, end in ranges
+                ],
+            }
+            print_step(
+                f"  Irodori 話者別長尺リファレンス生成: {speaker_id} "
+                f"({duration:.1f}s, {len(ranges)} clips)"
+            )
+
+        atomic_write_json(
+            self._cache_dir / "irodori_longref_meta.json",
+            reference_meta,
+        )
 
     def build_omnivoice_references(
         self,
@@ -260,6 +342,8 @@ class SpeakerReferenceCache:
         self._omnivoice_prompt_texts.clear()
         self._omnivoice_segment_refs.clear()
         self._omnivoice_segment_prompt_texts.clear()
+        self._irodori_speaker_refs.clear()
+        self._irodori_speaker_ref_durations.clear()
         gc.collect()
 
 
@@ -319,6 +403,66 @@ def _collect_reference_prompt_text(reference_seg, segments):
         key=lambda seg: abs(((seg.start + seg.end) / 2.0) - ref_center),
     )
     return normalize_spaces(nearest.text_src)
+
+
+def _select_irodori_reference_ranges(
+    segments: List[Segment],
+    *,
+    max_sec: float,
+) -> List[tuple[float, float]]:
+    """Select non-overlapping utterances up to Irodori's 120-second limit."""
+    limit = min(120.0, max(0.0, float(max_sec)))
+    if limit < MIN_SEGMENT_SEC:
+        return []
+
+    candidates = sorted(
+        segments,
+        key=lambda segment: (-(segment.end - segment.start), segment.start),
+    )
+    selected: List[tuple[float, float]] = []
+    total = 0.0
+
+    for segment in candidates:
+        start = max(0.0, float(segment.start))
+        end = max(start, float(segment.end))
+        if end - start < MIN_SEGMENT_SEC:
+            continue
+        if any(
+            start < selected_end and end > selected_start
+            for selected_start, selected_end in selected
+        ):
+            continue
+
+        remaining = limit - total
+        if remaining < MIN_SEGMENT_SEC:
+            break
+        end = min(end, start + remaining)
+        if end - start < MIN_SEGMENT_SEC:
+            continue
+
+        selected.append((start, end))
+        total += end - start
+        if total >= limit - 1e-6:
+            break
+
+    return sorted(selected)
+
+
+def _speaker_cache_key(speaker_id: str) -> str:
+    readable = "".join(
+        character if character.isascii() and character.isalnum() else "_"
+        for character in speaker_id
+    ).strip("_")
+    readable = readable[:40] or "speaker"
+    digest = hashlib.sha256(speaker_id.encode("utf-8")).hexdigest()[:10]
+    return f"{readable}_{digest}"
+
+
+def _reference_ranges_cache_key(ranges: List[tuple[float, float]]) -> str:
+    serialized = ";".join(
+        f"{start:.6f}-{end:.6f}" for start, end in ranges
+    )
+    return hashlib.sha256(serialized.encode("ascii")).hexdigest()[:10]
 
 
 def _normalize_reference_engine(tts_engine: str) -> str:

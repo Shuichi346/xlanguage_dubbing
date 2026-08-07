@@ -375,16 +375,28 @@ def process_one_video(
     )
 
     # ===== 6. 話者リファレンス音声生成 =====
-    if diarization is not None:
-        print_step(f"6. {tts_display} 用の話者代表リファレンス音声を抽出")
-        ref_cache.build_omnivoice_references(
-            voice_audio_path, diarization, segments_src
+    if _is_irodori_tts():
+        print_step(
+            "6. Irodori-TTS 用の話者別長尺リファレンス音声を生成"
+        )
+        ref_cache.build_irodori_speaker_references(
+            voice_audio_path,
+            segments_src,
         )
     else:
-        _reload_cached_references(ref_cache, segments_src)
+        if diarization is not None:
+            print_step(f"6. {tts_display} 用の話者代表リファレンス音声を抽出")
+            ref_cache.build_omnivoice_references(
+                voice_audio_path, diarization, segments_src
+            )
+        else:
+            _reload_cached_references(ref_cache, segments_src)
 
-    print_step(f"6.5. {tts_display} セグメント単位リファレンス音声を切り出し")
-    ref_cache.build_omnivoice_segment_references(voice_audio_path, segments_src)
+        print_step(f"6.5. {tts_display} セグメント単位リファレンス音声を切り出し")
+        ref_cache.build_omnivoice_segment_references(
+            voice_audio_path,
+            segments_src,
+        )
 
     # ===== 7. 翻訳 =====
     print_step("7. 翻訳（再開対応）")
@@ -752,13 +764,13 @@ def _run_tts_irodori(
     ensure_irodori_tts_server()
 
     def _build_segment_label(segno, total, seg):
-        has_seg_ref = (
-            ref_cache.get_omnivoice_segment_reference_path(segno) is not None
+        ref_duration = ref_cache.get_irodori_speaker_reference_duration(
+            seg.speaker_id
         )
-        ref_type = "セグメント単位" if has_seg_ref else "話者代表"
         return (
             f"  TTS seg {segno}/{total}: {seg.start:.3f}-{seg.end:.3f} "
-            f"speaker={seg.speaker_id} ref={ref_type} (Irodori-TTS)"
+            f"speaker={seg.speaker_id} ref=話者別長尺{ref_duration:.1f}s "
+            "(Irodori-TTS)"
         )
 
     def _generate(seg, out_audio_stub, segno):
