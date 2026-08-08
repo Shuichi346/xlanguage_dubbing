@@ -2,8 +2,9 @@
 
 ## 2026-08-07
 
-- Confirmed that Irodori-TTS-v4-Small supports at most 120 seconds of combined reference audio and recommends concatenating multiple short utterances from the same speaker.
-- Replaced Irodori per-segment references with one cached long reference per speaker; OmniVoice and VoxCPM2 reference behavior remained unchanged.
+- Confirmed from the Irodori v4 model and server implementations that multiple short utterances should be encoded separately, concatenated in order, and capped at 120 seconds (3000 DACVAE steps at 48 kHz).
+- Moved Irodori reference encoding into a short-lived Irodori-TTS-Server process and cached one raw FP32 tensor per speaker; API requests now use `irodori.ref_latent`, while OmniVoice and VoxCPM2 behavior remains unchanged.
+- Added cache fingerprints and tensor/hash validation so source audio, selected ranges, codec settings, or cache corruption trigger atomic regeneration of only the affected speaker latents.
 - Did not add DeepFilterNet3 because DeepFilterNet 0.5.6 requires `numpy<2` while pyannote-audio 4.x requires `numpy>=2`; the project dependency set cannot resolve both safely.
 
 ## 2026-08-05

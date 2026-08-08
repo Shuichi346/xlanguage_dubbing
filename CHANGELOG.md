@@ -8,6 +8,7 @@
 - Added `ENABLE_AUDIO_SEPARATION`, `DEMUCS_MODEL`, and `DEMUCS_DEVICE` environment settings; disabled mode keeps the previous raw-audio workflow.
 - Added `TTS_ENGINE=irodori` for Japanese Irodori-TTS-v4-Small voice cloning through Irodori-TTS-Server.
 - Added `IRODORI_MODEL_DEVICE` and `IRODORI_CODEC_DEVICE` settings, both defaulting to `cpu`.
+- Added `IRODORI_CODEC_REPO` so reference precomputation and server decoding use the same DACVAE codec.
 - Added Irodori Sway Sampling settings: `IRODORI_TTS_NUM_STEPS`, `IRODORI_TTS_T_SCHEDULE_MODE`, and `IRODORI_TTS_SWAY_COEFF`.
 - Added `IRODORI_REFERENCE_MAX_SEC` for Irodori long-reference construction.
 - Added `scripts/run_config_matrix.py` for developer verification across all supported `ASR_ENGINE`, `ENABLE_AUDIO_SEPARATION`, and `TTS_ENGINE` combinations on `input_videos/test.mp4`.
@@ -15,12 +16,12 @@
 ### Changed
 
 - Updated the default Irodori checkpoint to `Aratako/Irodori-TTS-v4-Small` and preserved the `8`-step Sway Sampling profile.
-- Changed Irodori cloning to concatenate up to 120 seconds of source utterances per speaker and reuse that speaker reference for every synthesized utterance.
+- Changed Irodori cloning to encode each selected short utterance in a short-lived server-environment process, concatenate up to 120 seconds of latents, and atomically cache one validated `.pt` tensor per speaker.
 - Changed the default Demucs model from `htdemucs_ft` to faster `htdemucs`.
 - Changed `TTS_ENGINE=voxcpm2` synthesis from Ultimate Cloning to Controllable Cloning by using per-segment `reference_wav_path` without prompt audio/text.
 - Separated background audio is now mixed at full volume; `ORIGINAL_VOLUME` only attenuates raw original audio when separation is disabled.
 - Replaced supported `TTS_ENGINE=kokoro-fastapi` selection with `TTS_ENGINE=irodori`.
-- Irodori mode sends the speaker-level long reference via `irodori.ref_wav` and sends Sway Sampling options by default; caption/style prompt and fixed `seconds` options are not sent.
+- Irodori mode now reuses the speaker-level cache via `irodori.ref_latent`, eliminating repeated DACVAE encoding in each API request. It never combines `ref_latent` with `ref_wav`; Sway Sampling remains enabled while caption/style prompt and fixed `seconds` stay omitted.
 
 ### Fixed
 

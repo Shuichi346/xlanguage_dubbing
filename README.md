@@ -128,7 +128,7 @@ cd Irodori-TTS-Server
 uv sync --extra cpu
 ```
 
-The default `IRODORI_TTS_DIR=./Irodori-TTS-Server` expects that checkout inside this repository root. With `IRODORI_TTS_AUTO_START=true`, the pipeline starts the server automatically when `TTS_ENGINE=irodori`.
+The default `IRODORI_TTS_DIR=./Irodori-TTS-Server` expects that checkout inside this repository root. When `TTS_ENGINE=irodori`, the pipeline first uses that server environment in a short-lived process to build missing speaker-reference latent caches. With `IRODORI_TTS_AUTO_START=true`, it then starts the long-running server automatically.
 
 ## Usage
 
@@ -214,6 +214,7 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 | `IRODORI_TTS_START_COMMAND` | Optional custom server start command. |
 | `IRODORI_TTS_API_KEY` | Optional API key sent to Irodori-TTS-Server. |
 | `IRODORI_HF_CHECKPOINT` | Hugging Face checkpoint used by Irodori-TTS-Server, default `Aratako/Irodori-TTS-v4-Small`. |
+| `IRODORI_CODEC_REPO` | DACVAE codec used for Irodori reference latent generation and server decoding, default `Aratako/Semantic-DACVAE-Japanese-32dim`. |
 | `IRODORI_MODEL_DEVICE` | Device used by the Irodori model, default `cpu`. Due to a PyTorch bug, `mps` may cause increased memory usage — be cautious of processing load. |
 | `IRODORI_CODEC_DEVICE` | Device used by the Irodori codec, default `cpu`. Due to a PyTorch bug, `mps` may cause increased memory usage — be cautious of processing load. |
 | `IRODORI_TTS_RESPONSE_FORMAT` | Audio response format, default `wav`. |
@@ -238,9 +239,9 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 |---|---|---|
 | `omnivoice` | You want the default process-internal cloned TTS path. | Uses speaker and per-segment reference audio plus reference text where available. |
 | `voxcpm2` | You want VoxCPM2 Controllable Cloning behavior. | Passes per-segment `reference_wav_path` only; prompt audio/text is not sent to VoxCPM2. |
-| `irodori` | You want Japanese cloned TTS through Irodori-TTS-Server. | Recommended here for English-to-Japanese jobs, only allowed with `OUTPUT_LANG=ja`, and reuses one long reference per speaker for every utterance. |
+| `irodori` | You want Japanese cloned TTS through Irodori-TTS-Server. | Recommended here for English-to-Japanese jobs, only allowed with `OUTPUT_LANG=ja`, and reuses one cached reference latent per speaker for every utterance. |
 
-Irodori mode uses `Aratako/Irodori-TTS-v4-Small`. It concatenates multiple short utterances from each speaker in chronological order into a single reference of up to 120 seconds, then sends the same file as `irodori.ref_wav` for every utterance by that speaker. Irodori also sends its faster Sway Sampling options by default (`num_steps=8`, `t_schedule_mode=sway`, `sway_coeff=-1.0`). It intentionally does not send Caption, Style Prompt, or fixed `seconds`; the server duration predictor is used.
+Irodori mode uses `Aratako/Irodori-TTS-v4-Small`. Before the TTS server starts, a short-lived process in the Irodori-TTS-Server environment loads only the DACVAE codec. It encodes each selected short utterance separately as 48 kHz mono FP32 with deterministic encoding and `normalize_db=-16.0`, concatenates the latents in chronological order, and caps the combined reference at 120 seconds. The validated tensor is atomically cached as one `.pt` file per speaker under `speaker_refs/`; reruns reuse it unless the source audio, selected ranges, or codec settings changed. Every utterance for that speaker sends the same path as `irodori.ref_latent`, never together with `ref_wav`. Irodori also sends its faster Sway Sampling options by default (`num_steps=8`, `t_schedule_mode=sway`, `sway_coeff=-1.0`). It intentionally does not send Caption, Style Prompt, or fixed `seconds`; the server duration predictor is used.
 
 ### Translation
 
@@ -268,7 +269,7 @@ The pipeline saves checkpoints and artifacts under `TEMP_ROOT`, including:
 - `segments_src.json`
 - `segments_translated.json`
 - `subtitles_src.srt`
-- `speaker_refs/`
+- `speaker_refs/` (including Irodori's per-speaker `.pt` reference latent caches)
 - `seg_audio/`
 - `tts_meta.json`
 - `retime/`
@@ -349,7 +350,13 @@ Run a syntax check for the package:
 uv run python -m compileall src
 ```
 
-There is no repository unit test suite configured yet. For functional verification, run `uv run xlanguage-dubbing` on a short video sample after changing pipeline, ASR, translation, TTS, or FFmpeg behavior.
+Run the repository unit tests:
+
+```bash
+uv run python -m unittest discover -s tests -v
+```
+
+For end-to-end functional verification, run `uv run xlanguage-dubbing` on a short video sample after changing pipeline, ASR, translation, TTS, or FFmpeg behavior.
 
 To verify the supported ASR, audio-source, and TTS configuration matrix against the fixed sample video at `input_videos/test.mp4`, run:
 

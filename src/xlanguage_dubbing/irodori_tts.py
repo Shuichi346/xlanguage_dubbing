@@ -4,7 +4,7 @@ Irodori-TTS-Server による日本語ボイスクローン TTS。
 
 サーバーは OpenAI 互換の /v1/audio/speech API を提供する。
 このクライアントは caption/style prompt と seconds を送らず、
-話者ごとの長尺リファレンス音声を irodori.ref_wav として渡す。
+話者ごとのキャッシュ済み参照潜在を irodori.ref_latent として渡す。
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from pathlib import Path
 from xlanguage_dubbing.audio.ffmpeg import ffprobe_duration_sec
 from xlanguage_dubbing.config import (
     IRODORI_CODEC_DEVICE,
+    IRODORI_CODEC_REPO,
     IRODORI_HF_CHECKPOINT,
     IRODORI_MODEL_DEVICE,
     IRODORI_TTS_API_KEY,
@@ -119,6 +120,9 @@ def _server_env() -> dict[str, str]:
     env.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
     env["IRODORI_MODEL_DEVICE"] = IRODORI_MODEL_DEVICE
     env["IRODORI_CODEC_DEVICE"] = IRODORI_CODEC_DEVICE
+    env["IRODORI_CODEC_REPO"] = IRODORI_CODEC_REPO
+    env["IRODORI_CODEC_PRECISION"] = "fp32"
+    env["IRODORI_CODEC_DETERMINISTIC_ENCODE"] = "true"
     env["IRODORI_HF_CHECKPOINT"] = IRODORI_HF_CHECKPOINT
     if IRODORI_TTS_API_KEY:
         env.setdefault("IRODORI_API_KEY", IRODORI_TTS_API_KEY)
@@ -222,7 +226,7 @@ def ensure_irodori_tts_server() -> None:
 def irodori_tts_synthesize(
     text: str,
     out_audio: Path,
-    ref_audio_path: Path,
+    ref_latent_path: Path,
 ) -> None:
     """Irodori-TTS-Server で音声を生成する。"""
     ensure_dir(out_audio.parent)
@@ -234,7 +238,7 @@ def irodori_tts_synthesize(
         "response_format": IRODORI_TTS_RESPONSE_FORMAT,
         "speed": IRODORI_TTS_SPEED,
         "irodori": {
-            "ref_wav": str(ref_audio_path),
+            "ref_latent": str(ref_latent_path),
             "num_steps": IRODORI_TTS_NUM_STEPS,
             "t_schedule_mode": IRODORI_TTS_T_SCHEDULE_MODE,
             "sway_coeff": IRODORI_TTS_SWAY_COEFF,
@@ -311,13 +315,13 @@ def generate_segment_tts_irodori(
                 duration_sec=float(duration),
             )
 
-    reference_speech = ref_cache.get_irodori_speaker_reference_path(
+    reference_latent = ref_cache.get_irodori_speaker_reference_latent_path(
         seg.speaker_id
     )
 
-    if reference_speech is None:
+    if reference_latent is None:
         print_step(
-            f"    警告: 話者 {seg.speaker_id} の Irodori リファレンスがありません。"
+            f"    警告: 話者 {seg.speaker_id} の Irodori 参照潜在がありません。"
         )
         return None
 
@@ -328,7 +332,7 @@ def generate_segment_tts_irodori(
         irodori_tts_synthesize(
             text=text,
             out_audio=tmp_audio,
-            ref_audio_path=reference_speech,
+            ref_latent_path=reference_latent,
         )
         _convert_to_flac(tmp_audio, out_flac)
         duration = ffprobe_duration_sec(out_flac)

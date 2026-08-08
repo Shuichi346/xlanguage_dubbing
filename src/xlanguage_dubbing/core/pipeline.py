@@ -377,7 +377,7 @@ def process_one_video(
     # ===== 6. 話者リファレンス音声生成 =====
     if _is_irodori_tts():
         print_step(
-            "6. Irodori-TTS 用の話者別長尺リファレンス音声を生成"
+            "6. Irodori-TTS 用の話者別参照潜在キャッシュを生成"
         )
         ref_cache.build_irodori_speaker_references(
             voice_audio_path,
@@ -769,7 +769,7 @@ def _run_tts_irodori(
         )
         return (
             f"  TTS seg {segno}/{total}: {seg.start:.3f}-{seg.end:.3f} "
-            f"speaker={seg.speaker_id} ref=話者別長尺{ref_duration:.1f}s "
+            f"speaker={seg.speaker_id} ref=話者別潜在{ref_duration:.1f}s "
             "(Irodori-TTS)"
         )
 

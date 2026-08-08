@@ -227,6 +227,9 @@ IRODORI_TTS_MODEL = _env("IRODORI_TTS_MODEL", "irodori-tts").strip()
 IRODORI_HF_CHECKPOINT = _env(
     "IRODORI_HF_CHECKPOINT", "Aratako/Irodori-TTS-v4-Small"
 ).strip() or "Aratako/Irodori-TTS-v4-Small"
+IRODORI_CODEC_REPO = _env(
+    "IRODORI_CODEC_REPO", "Aratako/Semantic-DACVAE-Japanese-32dim"
+).strip() or "Aratako/Semantic-DACVAE-Japanese-32dim"
 IRODORI_MODEL_DEVICE = _env("IRODORI_MODEL_DEVICE", "cpu").strip() or "cpu"
 IRODORI_CODEC_DEVICE = _env("IRODORI_CODEC_DEVICE", "cpu").strip() or "cpu"
 IRODORI_TTS_RESPONSE_FORMAT = _env(

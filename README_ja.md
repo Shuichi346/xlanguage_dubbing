@@ -128,7 +128,7 @@ cd Irodori-TTS-Server
 uv sync --extra cpu
 ```
 
-デフォルトの `IRODORI_TTS_DIR=./Irodori-TTS-Server` は、このリポジトリルート内にそのチェックアウトがあることを想定しています。`IRODORI_TTS_AUTO_START=true` の場合、`TTS_ENGINE=irodori` のときにパイプラインが自動でサーバーを起動します。
+デフォルトの `IRODORI_TTS_DIR=./Irodori-TTS-Server` は、このリポジトリルート内にそのチェックアウトがあることを想定しています。`TTS_ENGINE=irodori` では、まずその環境の短命プロセスで未生成の話者参照潜在キャッシュを作成します。`IRODORI_TTS_AUTO_START=true` の場合は、その後に長時間動作するサーバーを自動起動します。
 
 ## 使い方
 
@@ -214,6 +214,7 @@ uv run xlanguage-dubbing --generate-script
 | `IRODORI_TTS_START_COMMAND` | オプションのカスタムサーバー起動コマンド。 |
 | `IRODORI_TTS_API_KEY` | Irodori-TTS-Server に送信するオプションの API キー。 |
 | `IRODORI_HF_CHECKPOINT` | Irodori-TTS-Server が使う Hugging Face チェックポイント。デフォルトは `Aratako/Irodori-TTS-v4-Small`。 |
+| `IRODORI_CODEC_REPO` | Irodori 参照潜在の生成とサーバーのデコードに使う DACVAE。デフォルトは `Aratako/Semantic-DACVAE-Japanese-32dim`。 |
 | `IRODORI_MODEL_DEVICE` | Irodori モデルの実行デバイス。デフォルトは `cpu`。Pytorchのバグにより`mps`はメモリー増加で処理負荷注意。
  |
 | `IRODORI_CODEC_DEVICE` | Irodori コーデックの実行デバイス。デフォルトは `cpu`。Pytorchのバグにより`mps`はメモリー増加で処理負荷注意。
@@ -240,9 +241,9 @@ uv run xlanguage-dubbing --generate-script
 |---|---|---|
 | `omnivoice` | デフォルトのプロセス内クローン TTS パスを使いたい場合。 | 話者ごとおよびセグメントごとの参照音声と、利用可能な場合は参照テキストも使用します。 |
 | `voxcpm2` | VoxCPM2 のコントローラブルクローニング動作を使いたい場合。 | セグメントごとの `reference_wav_path` のみを渡します。プロンプト音声／テキストは VoxCPM2 に送信されません。 |
-| `irodori` | Irodori-TTS-Server を通じて日本語クローン TTS を使いたい場合。 | ここでは英日ジョブに推奨。`OUTPUT_LANG=ja` の場合のみ許可され、話者ごとの長尺参照音声をその話者の全セリフで再利用します。 |
+| `irodori` | Irodori-TTS-Server を通じて日本語クローン TTS を使いたい場合。 | ここでは英日ジョブに推奨。`OUTPUT_LANG=ja` の場合のみ許可され、話者ごとの参照潜在キャッシュをその話者の全セリフで再利用します。 |
 
-Irodori モードは `Aratako/Irodori-TTS-v4-Small` を使用します。同一話者の複数の短い発話を120秒まで時系列順に連結し、同じファイルをその話者の全セリフの `irodori.ref_wav` に使います。また、高速化用の Sway Sampling オプション（`num_steps=8`、`t_schedule_mode=sway`、`sway_coeff=-1.0`）を送信します。意図的に Caption・Style Prompt・固定 `seconds` は送信しません。サーバーの長さ予測機能を使用します。
+Irodori モードは `Aratako/Irodori-TTS-v4-Small` を使用します。TTS サーバー起動前に短命プロセスが DACVAE のみを読み込み、同一話者の短い発話をそれぞれ 48 kHz mono・FP32・deterministic encode・`normalize_db=-16.0` で潜在化します。その潜在列を時系列順に結合し、120秒以下に制限して、`speaker_refs/` 配下に話者ごと1つの `.pt` として atomic にキャッシュします。同じ話者の全セリフに同一パスを `irodori.ref_latent` として送り、`ref_wav` とは併用しません。Sway Sampling（`num_steps=8`、`t_schedule_mode=sway`、`sway_coeff=-1.0`）は維持し、Caption・Style Prompt・固定 `seconds` は送信しません。
 
 ### 翻訳
 
@@ -270,7 +271,7 @@ Irodori モードは `Aratako/Irodori-TTS-v4-Small` を使用します。同一�
 - `segments_src.json`
 - `segments_translated.json`
 - `subtitles_src.srt`
-- `speaker_refs/`
+- `speaker_refs/`（Irodori の話者別 `.pt` 参照潜在キャッシュを含む）
 - `seg_audio/`
 - `tts_meta.json`
 - `retime/`
@@ -351,7 +352,13 @@ uv run --no-sync python -m irodori_openai_tts --host 0.0.0.0 --port 8088
 uv run python -m compileall src
 ```
 
-リポジトリにはまだユニットテストスイートが設定されていません。パイプライン・ASR・翻訳・TTS・FFmpeg の動作を変更した後は、短い動画サンプルで `uv run xlanguage-dubbing` を実行して機能を確認してください。
+リポジトリのユニットテストを実行します：
+
+```bash
+uv run python -m unittest discover -s tests -v
+```
+
+エンドツーエンドの機能確認では、短い動画サンプルで `uv run xlanguage-dubbing` を実行してください。
 
 `input_videos/test.mp4` の固定サンプル動画に対して、対応する ASR・音声ソース・TTS の設定マトリクスを検証するには、以下を実行してください：
 

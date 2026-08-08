@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 サーバーヘルスチェック・起動スクリプト生成。
 """
@@ -11,6 +10,7 @@ from pathlib import Path
 
 from xlanguage_dubbing.config import (
     IRODORI_CODEC_DEVICE,
+    IRODORI_CODEC_REPO,
     IRODORI_HF_CHECKPOINT,
     IRODORI_MODEL_DEVICE,
     IRODORI_TTS_DIR,
@@ -52,6 +52,9 @@ set -euo pipefail
 
 export IRODORI_MODEL_DEVICE={shlex.quote(IRODORI_MODEL_DEVICE)}
 export IRODORI_CODEC_DEVICE={shlex.quote(IRODORI_CODEC_DEVICE)}
+export IRODORI_CODEC_REPO={shlex.quote(IRODORI_CODEC_REPO)}
+export IRODORI_CODEC_PRECISION=fp32
+export IRODORI_CODEC_DETERMINISTIC_ENCODE=true
 export IRODORI_HF_CHECKPOINT={shlex.quote(IRODORI_HF_CHECKPOINT)}
 
 cd "{IRODORI_TTS_DIR}"
