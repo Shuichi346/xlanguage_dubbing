@@ -494,7 +494,7 @@ def process_one_video(
         for i, part in enumerate(parts, start=1):
             out_flac = orig_chunk_dir / f"orig_{i:05d}.flac"
             orig_chunks.append(out_flac)
-            if out_flac.exists():
+            if out_flac.is_file() and out_flac.stat().st_size > 0:
                 continue
             encode_original_audio_chunk_flac(
                 background_audio_path, out_flac,

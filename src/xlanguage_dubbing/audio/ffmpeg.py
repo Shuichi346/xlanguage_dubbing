@@ -26,6 +26,7 @@ from xlanguage_dubbing.utils import (
 )
 
 _MIN_TRIM_SEC = 0.05
+_FLAC_FRAME_SAMPLES = 4096
 
 
 def ffprobe_duration_sec(media_path: Path) -> float:
@@ -238,7 +239,10 @@ def encode_original_audio_chunk_flac(
         f"atrim=start=0:end={duration:.6f},"
         f"asetpts=PTS-STARTPTS,"
         f"{atempo},"
-        f"aresample=async=1:first_pts=0"
+        f"aresample=async=1:first_pts=0,"
+        # A precise seek can produce a tiny first frame. FFmpeg 9's FLAC
+        # encoder rejects such a frame when it is used as the block size.
+        f"asetnsamples=n={_FLAC_FRAME_SAMPLES}:p=0"
     )
 
     cmd = [
