@@ -7,7 +7,10 @@ FFmpeg関連ユーティリティ。
 from __future__ import annotations
 
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import List, Optional
+
+import soundfile as sf
 
 from xlanguage_dubbing.config import (
     DUBBED_VOLUME,
@@ -302,27 +305,57 @@ def concat_ts_files(in_files: List[Path], out_ts: Path, list_file: Path) -> None
 def concat_audio_to_flac(
     in_files: List[Path], out_flac: Path, list_file: Path
 ) -> None:
-    """音声ファイルをFLACに結合する。"""
-    which_or_raise("ffmpeg")
+    """Decode normalized audio independently and join PCM with bounded memory."""
+    if not in_files:
+        raise PipelineError("連結対象の音声ファイルが空です。")
     ensure_dir(out_flac.parent)
     ensure_dir(list_file.parent)
-
-    lines = []
-    for p in in_files:
-        lines.append(f"file '{ffmpeg_concat_quote(str(p.resolve()))}'")
+    lines = [f"file '{ffmpeg_concat_quote(str(p.resolve()))}'" for p in in_files]
     atomic_write_text(list_file, "\n".join(lines) + "\n", encoding="utf-8")
 
-    cmd = [
-        "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", str(list_file),
-        "-ac", str(TTS_CHANNELS),
-        "-ar", str(TTS_SAMPLE_RATE),
-        "-c:a", "flac",
-        str(out_flac),
-    ]
-    run_cmd(cmd)
+    # Every pipeline chunk is normalized before reaching this stage. Separate
+    # decoders are required because silence and TTS can have different FLAC
+    # STREAMINFO block sizes even when their rate and channels are identical.
+    expected_frames = 0
+    for path in in_files:
+        info = sf.info(str(path))
+        if info.samplerate != TTS_SAMPLE_RATE or info.channels != TTS_CHANNELS:
+            raise PipelineError(f"連結音声のサンプルレート/チャンネル数が不一致: {path}")
+        if info.frames <= 0:
+            raise PipelineError(f"連結音声が空です: {path}")
+        expected_frames += info.frames
+
+    # Older versions left a nonempty, truncated FLAC after a failed concat.
+    # Its mere existence must never make resume skip the complete track.
+    if out_flac.is_file():
+        try:
+            info = sf.info(str(out_flac))
+            if (
+                info.frames == expected_frames
+                and info.samplerate == TTS_SAMPLE_RATE
+                and info.channels == TTS_CHANNELS
+            ):
+                return
+        except (RuntimeError, OSError):
+            pass
+
+    with TemporaryDirectory(prefix=".concat-", dir=out_flac.parent) as temp_dir:
+        staged = Path(temp_dir) / "audio.flac"
+        with sf.SoundFile(
+            str(staged), mode="w", samplerate=TTS_SAMPLE_RATE,
+            channels=TTS_CHANNELS, format="FLAC", subtype="PCM_24",
+        ) as output:
+            for path in in_files:
+                with sf.SoundFile(str(path)) as source:
+                    frames_read = 0
+                    for block in source.blocks(blocksize=65536, dtype="int32", always_2d=True):
+                        output.write(block)
+                        frames_read += len(block)
+                    if frames_read != source.frames:
+                        raise PipelineError(f"連結音声が途中で切れています: {path}")
+        if sf.info(str(staged)).frames != expected_frames:
+            raise PipelineError("結合音声のサンプル数が一致しません。")
+        staged.replace(out_flac)
 
 
 def remux_ts_to_mp4(video_ts: Path, out_mp4: Path) -> None:

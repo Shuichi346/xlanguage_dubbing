@@ -503,10 +503,7 @@ def process_one_video(
 
         original_retimed_flac = retime_dir / "original_retimed.flac"
         orig_list = retime_dir / "original_concat.txt"
-        if not original_retimed_flac.exists():
-            concat_audio_to_flac(
-                orig_chunks, original_retimed_flac, orig_list
-            )
+        concat_audio_to_flac(orig_chunks, original_retimed_flac, orig_list)
 
         progress.set_artifact(
             "background_retimed_flac", str(original_retimed_flac)
@@ -536,8 +533,7 @@ def process_one_video(
 
     dubbed_full_flac = retime_dir / "dubbed_full.flac"
     dubbed_list = retime_dir / "dubbed_concat.txt"
-    if not dubbed_full_flac.exists():
-        concat_audio_to_flac(dubbed_items, dubbed_full_flac, dubbed_list)
+    concat_audio_to_flac(dubbed_items, dubbed_full_flac, dubbed_list)
 
     progress.set_artifact("dubbed_full_flac", str(dubbed_full_flac))
     progress.set_step("retime_done", True)

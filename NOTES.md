@@ -1,5 +1,15 @@
 # Notes
 
+## 2026-09-10
+
+- Installed Ruff 0.16.6 and ty 0.0.80 from the project `dev` dependency group using `uv sync --only-group dev --inexact` to preserve runtime packages. Initial checks reported 113 Ruff errors and 19 ty diagnostics; broad code cleanup remains separate from tool setup. The local `uv.lock` was refreshed and remains ignored under the existing repository policy.
+
+- Validation passed all 17 tests, recovered all 948 cached audio parts, decoded the complete joined speech track without errors, and muxed a 5319.087-second H.264/AAC verification MP4 under the job’s `retime` directory using the current `.env`.
+
+- Reproduced FFmpeg 9.0.1 concat decoding failures (`blocksize 4064 > 1024`) with the cached Steve Jobs OmniVoice/raw-audio job. Silence and speech FLACs had compatible rates/channels but different STREAMINFO block sizes.
+- Replaced compressed-packet concatenation with independent SoundFile decoders streaming PCM into one FLAC writer. Inputs remain normalized to the configured TTS rate/channels; 24-bit output preserves both 16- and 24-bit source precision.
+- Replaced existence-only joined-audio cache checks with total-frame/rate/channel checks and atomic publication, allowing the existing truncated `dubbed_full.flac` to recover without rerunning TTS.
+
 ## 2026-08-07
 
 - Confirmed from the Irodori v4 model and server implementations that multiple short utterances should be encoded separately, concatenated in order, and capped at 120 seconds (3000 DACVAE steps at 48 kHz).

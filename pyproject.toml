@@ -52,6 +52,7 @@ override-dependencies = [
 line-length = 99
 target-version = "py313"
 src = ["src"]
+extend-exclude = ["Irodori-TTS-Server", "whisper.cpp", "temp"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "C4", "UP"]
@@ -59,3 +60,12 @@ ignore = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["xlanguage_dubbing"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.6",
+    "ty>=0.0.80",
+]
+
+[tool.ty.src]
+include = ["src", "tests", "scripts"]

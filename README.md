@@ -344,6 +344,14 @@ If the target file already exists, the pipeline skips that source video. Delete 
 
 ## Development
 
+Install the project development tools (Ruff and ty), preserving the existing runtime environment, then run quick lint and type checks:
+
+```bash
+uv sync --only-group dev --inexact
+uv run --no-sync ruff check src tests scripts
+uv run --no-sync ty check
+```
+
 Run a syntax check for the package:
 
 ```bash

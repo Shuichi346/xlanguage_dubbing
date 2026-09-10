@@ -14,3 +14,7 @@ Project instructions for coding agents working in this repository.
 - Limit Irodori reference latents to 120 seconds, compose them from multiple short utterances by the same speaker, and keep one validated, atomically-written `.pt` cache per speaker under `speaker_refs`.
 - Keep the CAT-Translate-7b prompt aligned with CyberAgent's 7B-specific chat template. Pass the complete prompt as tokens created with `add_bos=False` and `special=True` because the template already contains `<s>`.
 - Keep the TranslateGemma text prompt aligned with the structured template embedded in its GGUF: preserve source/target language codes, three newlines before source text, and Gemma turn markers. Its prompt omits a textual BOS because `llama-cpp-python` prepends one.
+
+- Concatenate silence and TTS FLAC chunks through independent decoders; their STREAMINFO block sizes may differ. Validate joined-track sample counts before cache reuse and publish completed audio atomically.
+
+- Install project lint/type tools with `uv sync --only-group dev --inexact`. Run `uv run --no-sync ruff check src tests scripts` and `uv run --no-sync ty check` for quick checks after Python edits; report existing diagnostics rather than silently suppressing them.

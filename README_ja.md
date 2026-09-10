@@ -346,6 +346,14 @@ uv run --no-sync python -m irodori_openai_tts --host 0.0.0.0 --port 8088
 
 ## 開発
 
+既存の実行環境を維持しながら、開発用の Ruff と ty をインストールして簡易チェックを実行します：
+
+```bash
+uv sync --only-group dev --inexact
+uv run --no-sync ruff check src tests scripts
+uv run --no-sync ty check
+```
+
 パッケージの構文チェックを実行します：
 
 ```bash
