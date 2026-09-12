@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 TranslateGemma-12b-it (GGUF) による多言語翻訳処理。
 llama-cpp-python でプロセス内推論する。

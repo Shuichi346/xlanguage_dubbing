@@ -5,7 +5,6 @@
 ### Added
 
 - Added Ruff and ty as project development dependencies with documented quick lint/type checks.
-
 - Added optional Demucs voice/background separation before ASR and TTS reference extraction.
 - Added `ENABLE_AUDIO_SEPARATION`, `DEMUCS_MODEL`, and `DEMUCS_DEVICE` environment settings; disabled mode keeps the previous raw-audio workflow.
 - Added `TTS_ENGINE=irodori` for Japanese Irodori-TTS-v4-Small voice cloning through Irodori-TTS-Server.
@@ -27,8 +26,9 @@
 
 ### Fixed
 
+- Corrected the TorchCodec audio loader to use `get_all_samples()` instead of the nonexistent `decode()` method, preserving existing fallback loaders.
+- Rejected malformed Irodori worker manifests with a pipeline error before subprocess launch.
 - Fixed final audio concatenation failing on mixed silence/TTS FLAC block sizes by decoding each chunk independently with bounded memory. Incomplete joined tracks are rebuilt on resume, and replacements are published atomically.
-
 - Fixed CAT-Translate-7b GGUF inference adding a duplicate BOS token, which could reduce translation quality and cause wrong-language or prompt-contaminated output.
 - Store VoxCPM2 reference metadata and segment clips under `voxcpm2_*` names instead of `omnivoice_*` names.
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 進行状況（チェックポイント）管理。
 """
@@ -8,12 +7,12 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from xlanguage_dubbing.utils import atomic_write_json, load_json_if_exists, print_step
 
 
-def video_signature(video_path: Path) -> Dict[str, Any]:
+def video_signature(video_path: Path) -> dict[str, Any]:
     """動画ファイルのシグネチャを取得する。"""
     st = video_path.stat()
     return {
@@ -29,7 +28,7 @@ class ProgressStore:
     def __init__(self, path: Path, video_path: Path) -> None:
         self.path = path
         self.video_path = video_path
-        self.data: Dict[str, Any] = {
+        self.data: dict[str, Any] = {
             "version": 9,
             "video": video_signature(video_path),
             "steps": {

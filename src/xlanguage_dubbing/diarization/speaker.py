@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 pyannote.audioによる話者分離処理。
 """
@@ -8,7 +7,6 @@ from __future__ import annotations
 
 import gc
 from pathlib import Path
-from typing import List
 
 from xlanguage_dubbing.config import HF_AUTH_TOKEN, PYANNOTE_MODEL
 from xlanguage_dubbing.core.models import DiarizationSegment
@@ -51,7 +49,7 @@ def _load_audio_waveform(wav_path: Path):
         from torchcodec.decoders import AudioDecoder
 
         decoder = AudioDecoder(str(wav_path))
-        result = decoder.decode()
+        result = decoder.get_all_samples()
         waveform = result.data
         sample_rate = result.sample_rate
         if waveform.dtype != torch.float32:
@@ -70,8 +68,8 @@ def _load_audio_waveform(wav_path: Path):
         pass
 
     try:
-        import soundfile as sf
         import numpy as np
+        import soundfile as sf
 
         data, sample_rate = sf.read(str(wav_path), dtype="float32")
         if data.ndim == 1:
@@ -99,7 +97,7 @@ def _extract_annotation(raw_output):
     )
 
 
-def run_diarization(wav_path: Path) -> List[DiarizationSegment]:
+def run_diarization(wav_path: Path) -> list[DiarizationSegment]:
     """話者分離を実行する。"""
     pipeline = _get_pipeline()
 
@@ -113,7 +111,7 @@ def run_diarization(wav_path: Path) -> List[DiarizationSegment]:
 
     annotation = _extract_annotation(raw_output)
 
-    results: List[DiarizationSegment] = []
+    results: list[DiarizationSegment] = []
     for turn, _, speaker in annotation.itertracks(yield_label=True):
         results.append(DiarizationSegment(
             start=float(turn.start),
@@ -126,7 +124,7 @@ def run_diarization(wav_path: Path) -> List[DiarizationSegment]:
 
     print_step(
         f"  話者分離完了: {len(results)} 区間, "
-        f"話者数={len(set(r.speaker for r in results))}"
+        f"話者数={len({r.speaker for r in results})}"
     )
     return results
 

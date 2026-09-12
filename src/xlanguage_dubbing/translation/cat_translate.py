@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 翻訳処理の統合エントリポイント。
 
@@ -18,8 +17,8 @@ import re
 import time
 from dataclasses import replace
 from pathlib import Path
-from typing import Optional
 
+from xlanguage_dubbing.audio.segment_io import load_segments_json, save_segments_json_atomic
 from xlanguage_dubbing.config import (
     CAT_TRANSLATE_FILE,
     CAT_TRANSLATE_N_CTX,
@@ -36,7 +35,6 @@ from xlanguage_dubbing.config import (
 )
 from xlanguage_dubbing.core.models import Segment
 from xlanguage_dubbing.core.progress import ProgressStore
-from xlanguage_dubbing.audio.segment_io import load_segments_json, save_segments_json_atomic
 from xlanguage_dubbing.lang_utils import (
     detect_language_from_text,
     normalize_lang_code,
@@ -393,7 +391,7 @@ class CatTranslateClient:
             retries = TRANSLATEGEMMA_RETRIES
             retry_backoff_sec = TRANSLATEGEMMA_RETRY_BACKOFF_SEC
 
-        last_err: Optional[Exception] = None
+        last_err: Exception | None = None
         for attempt in range(1, retries + 1):
             try:
                 result = _translate_text(text, source_lang, tgt)

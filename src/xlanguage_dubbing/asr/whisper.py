@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 whisper.cpp CLI（+ Silero VAD）による音声認識処理。
 --language auto 対応: 自動言語判定結果を JSON から取得する。
@@ -10,7 +9,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import List
 
 from xlanguage_dubbing.config import (
     INPUT_LANG,
@@ -95,7 +93,7 @@ def extract_wav_for_vibevoice(video_path: Path, wav_path: Path) -> None:
     run_cmd(cmd)
 
 
-def whisper_transcribe(wav_path: Path) -> tuple[List[Segment], str]:
+def whisper_transcribe(wav_path: Path) -> tuple[list[Segment], str]:
     """whisper.cpp CLI + VAD で音声を文字起こしする。
 
     戻り値: (セグメントリスト, 検出言語コード)
@@ -152,7 +150,7 @@ def whisper_transcribe(wav_path: Path) -> tuple[List[Segment], str]:
     return segments, detected_lang
 
 
-def _parse_whisper_json(json_path: Path) -> tuple[List[Segment], str]:
+def _parse_whisper_json(json_path: Path) -> tuple[list[Segment], str]:
     """whisper.cpp の JSON 出力をパースする。
 
     戻り値: (セグメントリスト, 検出言語コード)
@@ -169,7 +167,7 @@ def _parse_whisper_json(json_path: Path) -> tuple[List[Segment], str]:
             detected_lang = _whisper_lang_name_to_code(lang_full)
 
     transcription = data.get("transcription", [])
-    segments: List[Segment] = []
+    segments: list[Segment] = []
 
     for entry in transcription:
         offsets = entry.get("offsets", {})

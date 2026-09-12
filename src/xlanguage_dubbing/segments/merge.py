@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 セグメント結合処理。
 """
@@ -7,7 +6,6 @@
 from __future__ import annotations
 
 import re
-from typing import List, Optional
 
 from xlanguage_dubbing.config import (
     MERGE_FORCE_IF_VERY_SHORT_SEC,
@@ -24,13 +22,13 @@ def _ends_sentence(text: str) -> bool:
     return bool(re.search(r"[\.!\?。！？]$", t))
 
 
-def merge_segments(segments: List[Segment]) -> List[Segment]:
+def merge_segments(segments: list[Segment]) -> list[Segment]:
     """短すぎるセグメントを結合する。同一話者のみ結合可能。"""
     if not segments:
         return []
 
-    merged: List[Segment] = []
-    buf: Optional[Segment] = None
+    merged: list[Segment] = []
+    buf: Segment | None = None
 
     def flush() -> None:
         nonlocal buf
@@ -82,7 +80,7 @@ def merge_segments(segments: List[Segment]) -> List[Segment]:
 
     flush()
 
-    out: List[Segment] = []
+    out: list[Segment] = []
     for i, s in enumerate(merged):
         out.append(Segment(
             idx=i, start=s.start, end=s.end,

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 spaCyによるセグメント文分割処理。
 """
@@ -7,7 +6,6 @@ spaCyによるセグメント文分割処理。
 from __future__ import annotations
 
 import re
-from typing import List, Optional
 
 from xlanguage_dubbing.config import SPACY_MIN_WEIGHT, SPACY_MODEL
 from xlanguage_dubbing.core.models import Segment
@@ -56,18 +54,18 @@ def _weight_for_time_allocation(text: str) -> int:
 
 
 def chunk_segments_for_spacy(
-    segments: List[Segment],
+    segments: list[Segment],
     *,
     max_sec: float,
     max_chars: int,
     max_gap_sec: float,
-) -> List[Segment]:
+) -> list[Segment]:
     """spaCy処理前にセグメントをチャンク化する。"""
     if not segments:
         return []
 
-    out: List[Segment] = []
-    buf: Optional[Segment] = None
+    out: list[Segment] = []
+    buf: Segment | None = None
 
     def flush() -> None:
         nonlocal buf
@@ -124,13 +122,13 @@ def chunk_segments_for_spacy(
     ]
 
 
-def split_segments_by_spacy_sentences(segments: List[Segment]) -> List[Segment]:
+def split_segments_by_spacy_sentences(segments: list[Segment]) -> list[Segment]:
     """セグメントをspaCyで文単位に分割する。"""
     if not segments:
         return []
 
     nlp = _get_spacy_nlp()
-    out: List[Segment] = []
+    out: list[Segment] = []
 
     for seg in segments:
         text = (seg.text_src or "").strip()

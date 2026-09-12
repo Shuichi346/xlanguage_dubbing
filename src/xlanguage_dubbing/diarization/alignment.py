@@ -1,22 +1,19 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Whisperセグメントと話者分離結果の突合処理。
 """
 
 from __future__ import annotations
 
-from typing import List
-
 from xlanguage_dubbing.core.models import DiarizationSegment, Segment
 
 
 def assign_speakers(
-    segments: List[Segment],
-    diarization: List[DiarizationSegment],
-) -> List[Segment]:
+    segments: list[Segment],
+    diarization: list[DiarizationSegment],
+) -> list[Segment]:
     """各Whisperセグメントに最も重複時間が長い話者IDを割り当てる。"""
-    result: List[Segment] = []
+    result: list[Segment] = []
     prev_speaker = ""
 
     for seg in segments:

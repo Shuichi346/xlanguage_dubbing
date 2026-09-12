@@ -2,13 +2,14 @@
 
 ## 2026-09-10
 
-- Installed Ruff 0.16.6 and ty 0.0.80 from the project `dev` dependency group using `uv sync --only-group dev --inexact` to preserve runtime packages. Initial checks reported 113 Ruff errors and 19 ty diagnostics; broad code cleanup remains separate from tool setup. The local `uv.lock` was refreshed and remains ignored under the existing repository policy.
-
-- Validation passed all 17 tests, recovered all 948 cached audio parts, decoded the complete joined speech track without errors, and muxed a 5319.087-second H.264/AAC verification MP4 under the job’s `retime` directory using the current `.env`.
-
 - Reproduced FFmpeg 9.0.1 concat decoding failures (`blocksize 4064 > 1024`) with the cached Steve Jobs OmniVoice/raw-audio job. Silence and speech FLACs had compatible rates/channels but different STREAMINFO block sizes.
 - Replaced compressed-packet concatenation with independent SoundFile decoders streaming PCM into one FLAC writer. Inputs remain normalized to the configured TTS rate/channels; 24-bit output preserves both 16- and 24-bit source precision.
 - Replaced existence-only joined-audio cache checks with total-frame/rate/channel checks and atomic publication, allowing the existing truncated `dubbed_full.flac` to recover without rerunning TTS.
+- Verified the concat fix with 17 tests, recovered all 948 cached audio parts, decoded the complete joined speech track without errors, and muxed a 5319.087-second H.264/AAC verification MP4 under the job’s `retime` directory using that run’s `.env`.
+- Installed Ruff 0.16.6 and ty 0.0.80 from the project `dev` dependency group using `uv sync --only-group dev --inexact` to preserve runtime packages. The local `uv.lock` was refreshed and remained ignored under the existing repository policy.
+- Addressed the initial 113 Ruff errors and 19 ty diagnostics by modernizing annotations/imports, typing pending Irodori reference records, narrowing optional values, and validating worker manifests. Both tools, compilation, and all 20 unit tests passed after this cleanup; full model inference was not rerun.
+- Corrected the nonexistent TorchCodec `decode()` call to `get_all_samples()`. Native TorchCodec still failed to load in the installed environment; retained audio fallbacks and tested the primary API contract with a test double and SoundFile sample/channel preservation. Native TorchCodec decoding remains unverified.
+- Kept one explained `ty: ignore[unresolved-import]` for the worker-only `irodori_tts.codec` import. Confirmed its source file existed in the separate Irodori server Python 3.10 environment; this was not a runtime import or model-inference test. Other type diagnostics were resolved without blanket rule suppression.
 
 ## 2026-08-07
 

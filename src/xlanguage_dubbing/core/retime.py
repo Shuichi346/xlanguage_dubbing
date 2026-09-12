@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 リタイム関連処理。
 音声に合わせて動画速度を変更する。
@@ -7,20 +6,18 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
-
 from xlanguage_dubbing.core.models import RetimePart, Segment, TtsMeta
 
 _MIN_CHUNK_SEC = 0.15
 
 
 def build_retime_parts(
-    segments: List[Segment],
-    tts_meta: Dict[int, TtsMeta],
+    segments: list[Segment],
+    tts_meta: dict[int, TtsMeta],
     video_duration_sec: float,
-) -> Tuple[List[RetimePart], float]:
+) -> tuple[list[RetimePart], float]:
     """元動画をギャップ・発話・末尾に分解する。"""
-    raw_parts: List[RetimePart] = []
+    raw_parts: list[RetimePart] = []
     cursor = 0.0
     vd = max(0.0, float(video_duration_sec))
 
@@ -95,12 +92,12 @@ def build_retime_parts(
     return parts, float(total_out)
 
 
-def _merge_tiny_parts(raw: List[RetimePart]) -> List[RetimePart]:
+def _merge_tiny_parts(raw: list[RetimePart]) -> list[RetimePart]:
     """短すぎるパートを隣接パートに吸収する。"""
     if not raw:
         return []
 
-    result: List[RetimePart] = []
+    result: list[RetimePart] = []
     i = 0
     while i < len(raw):
         part = raw[i]

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 セグメントJSON I/O、SRT出力。
 """
@@ -8,7 +7,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from xlanguage_dubbing.core.models import Segment
 from xlanguage_dubbing.utils import (
@@ -19,7 +18,7 @@ from xlanguage_dubbing.utils import (
 )
 
 
-def segments_to_payload(segments: List[Segment]) -> List[Dict[str, Any]]:
+def segments_to_payload(segments: list[Segment]) -> list[dict[str, Any]]:
     """セグメントリストをJSONペイロードに変換する。"""
     return [
         {
@@ -35,11 +34,11 @@ def segments_to_payload(segments: List[Segment]) -> List[Dict[str, Any]]:
     ]
 
 
-def payload_to_segments(payload: Any) -> List[Segment]:
+def payload_to_segments(payload: Any) -> list[Segment]:
     """JSONペイロードからセグメントリストを生成する。"""
     if not isinstance(payload, list):
         raise PipelineError("segments json がリスト形式ではありません。")
-    out: List[Segment] = []
+    out: list[Segment] = []
     for i, row in enumerate(payload):
         if not isinstance(row, dict):
             continue
@@ -64,12 +63,12 @@ def payload_to_segments(payload: Any) -> List[Segment]:
     return out
 
 
-def save_segments_json_atomic(segments: List[Segment], out_json: Path) -> None:
+def save_segments_json_atomic(segments: list[Segment], out_json: Path) -> None:
     """セグメントをJSONにアトミック保存する。"""
     atomic_write_json(out_json, segments_to_payload(segments))
 
 
-def load_segments_json(out_json: Path) -> List[Segment]:
+def load_segments_json(out_json: Path) -> list[Segment]:
     """JSONからセグメントを読み込む。"""
     obj = load_json_if_exists(out_json)
     if obj is None:
@@ -91,9 +90,9 @@ def _format_srt_timestamp(sec: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
-def _segments_to_srt_text(segments: List[Segment]) -> str:
+def _segments_to_srt_text(segments: list[Segment]) -> str:
     """セグメントリストからSRTテキストを生成する。"""
-    lines: List[str] = []
+    lines: list[str] = []
     counter = 1
     for seg in segments:
         text = (seg.text_src or "").strip()
@@ -113,7 +112,7 @@ def _segments_to_srt_text(segments: List[Segment]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def save_srt_atomic(segments: List[Segment], out_srt: Path) -> None:
+def save_srt_atomic(segments: list[Segment], out_srt: Path) -> None:
     """SRTをアトミックに保存する。"""
     srt_text = _segments_to_srt_text(segments)
     atomic_write_text(out_srt, srt_text, encoding="utf-8")

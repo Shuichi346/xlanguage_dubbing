@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 OmniVoice による音声合成処理。
 600+言語対応のゼロショットボイスクローン TTS。
@@ -12,7 +11,6 @@ import gc
 import os
 import time
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import torch
@@ -20,9 +18,9 @@ import torch
 from xlanguage_dubbing.audio.ffmpeg import ffprobe_duration_sec
 from xlanguage_dubbing.config import (
     MIN_SEGMENT_SEC,
+    OMNIVOICE_DTYPE,
     OMNIVOICE_DURATION_SCALE,
     OMNIVOICE_DURATION_TOLERANCE,
-    OMNIVOICE_DTYPE,
     OMNIVOICE_GUIDANCE_SCALE,
     OMNIVOICE_MODEL,
     OMNIVOICE_NUM_STEP,
@@ -125,9 +123,9 @@ def _to_numpy(waveform) -> np.ndarray:
 def omnivoice_synthesize(
     text: str,
     out_wav: Path,
-    ref_audio_path: Optional[Path] = None,
+    ref_audio_path: Path | None = None,
     ref_text: str = "",
-    target_duration: Optional[float] = None,
+    target_duration: float | None = None,
 ) -> None:
     """OmniVoice で音声を合成する。"""
     ensure_dir(out_wav.parent)
@@ -219,7 +217,7 @@ def _validate_omnivoice_quality(
 def _synthesize_with_quality_retry(
     text: str,
     tmp_wav: Path,
-    ref_audio_path: Optional[Path],
+    ref_audio_path: Path | None,
     ref_text: str,
     target_duration: float,
 ) -> None:
@@ -271,7 +269,7 @@ def generate_segment_tts_omnivoice(
     out_audio_stub: Path,
     ref_cache: SpeakerReferenceCache,
     segno: int = 0,
-) -> Optional[TtsMeta]:
+) -> TtsMeta | None:
     """OmniVoice でセグメントのボイスクローン音声を生成する。"""
     if seg.duration < MIN_SEGMENT_SEC:
         return None

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 FFmpeg関連ユーティリティ。
 """
@@ -8,7 +7,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import List, Optional
 
 import soundfile as sf
 
@@ -98,7 +96,7 @@ def extract_concatenated_audio_segments(
     media_in: Path,
     out_wav: Path,
     *,
-    ranges: List[tuple[float, float]],
+    ranges: list[tuple[float, float]],
     sample_rate: int = 48000,
     channels: int = 1,
 ) -> None:
@@ -156,7 +154,7 @@ def build_atempo_filter(speed_factor: float) -> str:
     if speed_factor <= 0:
         raise PipelineError(f"不正な speed_factor: {speed_factor}")
 
-    factors: List[float] = []
+    factors: list[float] = []
     x = float(speed_factor)
 
     while x > 2.0:
@@ -280,7 +278,7 @@ def create_silence_flac(out_flac: Path, duration_sec: float) -> None:
     run_cmd(cmd)
 
 
-def concat_ts_files(in_files: List[Path], out_ts: Path, list_file: Path) -> None:
+def concat_ts_files(in_files: list[Path], out_ts: Path, list_file: Path) -> None:
     """TSファイルを結合する。"""
     which_or_raise("ffmpeg")
     ensure_dir(out_ts.parent)
@@ -303,7 +301,7 @@ def concat_ts_files(in_files: List[Path], out_ts: Path, list_file: Path) -> None
 
 
 def concat_audio_to_flac(
-    in_files: List[Path], out_flac: Path, list_file: Path
+    in_files: list[Path], out_flac: Path, list_file: Path
 ) -> None:
     """Decode normalized audio independently and join PCM with bounded memory."""
     if not in_files:
@@ -377,7 +375,7 @@ def mux_retimed_video_with_tracks(
     dubbed_flac: Path,
     out_mp4: Path,
     *,
-    original_flac: Optional[Path],
+    original_flac: Path | None,
     original_volume: float | None = None,
 ) -> None:
     """リタイム済み映像に音声を合成する。"""

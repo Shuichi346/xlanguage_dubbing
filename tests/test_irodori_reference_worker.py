@@ -53,7 +53,7 @@ class IrodoriReferenceWorkerTests(unittest.TestCase):
 
         package_module = types.ModuleType("irodori_tts")
         codec_module = types.ModuleType("irodori_tts.codec")
-        codec_module.DACVAECodec = FakeDACVAECodec
+        codec_module.__dict__["DACVAECodec"] = FakeDACVAECodec
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)

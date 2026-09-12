@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 VoxCPM2 による音声合成処理。
 30言語対応の Controllable Cloning モード（参照音声のみ）で
@@ -13,7 +12,6 @@ import gc
 import os
 import time
 from pathlib import Path
-from typing import Optional
 
 import torch
 
@@ -116,7 +114,7 @@ def release_voxcpm2_model() -> None:
 def voxcpm2_synthesize(
     text: str,
     out_wav: Path,
-    ref_audio_path: Optional[Path] = None,
+    ref_audio_path: Path | None = None,
     ref_text: str = "",
 ) -> None:
     """VoxCPM2 の Controllable Cloning モードで音声を合成する。"""
@@ -204,7 +202,7 @@ def _validate_voxcpm2_quality(
 def _synthesize_with_quality_retry(
     text: str,
     tmp_wav: Path,
-    ref_audio_path: Optional[Path],
+    ref_audio_path: Path | None,
     ref_text: str,
     target_duration: float,
 ) -> None:
@@ -255,7 +253,7 @@ def generate_segment_tts_voxcpm2(
     out_audio_stub: Path,
     ref_cache: SpeakerReferenceCache,
     segno: int = 0,
-) -> Optional[TtsMeta]:
+) -> TtsMeta | None:
     """VoxCPM2 でセグメントのボイスクローン音声を生成する。"""
     if seg.duration < MIN_SEGMENT_SEC:
         return None

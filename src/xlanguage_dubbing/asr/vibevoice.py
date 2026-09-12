@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 VibeVoice-ASR（Microsoft 製、mlx-audio 経由）による音声認識処理。
 文字起こし・話者分離・タイムスタンプを1パスで出力する。
@@ -12,7 +11,7 @@ import gc
 import re
 import time
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 from xlanguage_dubbing.config import (
     VIBEVOICE_CHUNK_MAX_SECONDS,
@@ -63,7 +62,7 @@ def _get_vibevoice_model():
     import mlx.core as mx
 
     device_info = mx.device_info()
-    max_recommended = device_info["max_recommended_working_set_size"]
+    max_recommended = int(device_info["max_recommended_working_set_size"])
     memory_limit = int(max_recommended * VIBEVOICE_MEMORY_LIMIT_RATIO)
     mx.metal.set_memory_limit(memory_limit)
     print_step(
@@ -94,14 +93,14 @@ def _get_available_memory_gb() -> float:
     import mlx.core as mx
 
     device_info = mx.device_info()
-    max_recommended = device_info["max_recommended_working_set_size"]
+    max_recommended = int(device_info["max_recommended_working_set_size"])
     active = mx.metal.get_active_memory()
     available = max_recommended - active
     return available / (1024 ** 3)
 
 
 def _calculate_encoder_chunk_seconds(
-    available_gb: Optional[float] = None,
+    available_gb: float | None = None,
 ) -> int:
     """空きメモリに基づいてチャンクサイズを決定する。"""
     if available_gb is None:
@@ -202,7 +201,7 @@ def _generate_with_precomputed_features(
     model,
     speech_features,
     audio_duration: float,
-    context: Optional[str] = None,
+    context: str | None = None,
 ) -> dict:
     """事前計算済みの speech_features を使ってテキスト生成する。"""
     import mlx.core as mx
@@ -288,7 +287,7 @@ def _generate_standard(model, wav_path: Path) -> dict:
 
 def vibevoice_transcribe(
     wav_path: Path,
-) -> Tuple[List[Segment], List[DiarizationSegment]]:
+) -> tuple[list[Segment], list[DiarizationSegment]]:
     """VibeVoice-ASR で文字起こしと話者分離を同時に実行する。"""
     model = _get_vibevoice_model()
 
@@ -354,7 +353,7 @@ def vibevoice_transcribe(
             "VibeVoice-ASR: 文字起こし結果が空です。"
         )
 
-    speaker_ids = sorted(set(s.speaker_id for s in segments))
+    speaker_ids = sorted({s.speaker_id for s in segments})
     print_step(
         f"  VibeVoice-ASR 完了: {len(segments)} セグメント, "
         f"話者数={len(speaker_ids)}, ID={speaker_ids}"
@@ -365,10 +364,10 @@ def vibevoice_transcribe(
 
 def _parse_vibevoice_segments(
     raw_segments: list,
-) -> Tuple[List[Segment], List[DiarizationSegment]]:
+) -> tuple[list[Segment], list[DiarizationSegment]]:
     """VibeVoice-ASR のセグメントをパースする。"""
-    segments: List[Segment] = []
-    diarization: List[DiarizationSegment] = []
+    segments: list[Segment] = []
+    diarization: list[DiarizationSegment] = []
     idx = 0
 
     for seg in raw_segments:

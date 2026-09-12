@@ -12,6 +12,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import TypedDict
 
 from xlanguage_dubbing.audio.ffmpeg import extract_audio_segment
 from xlanguage_dubbing.config import (
@@ -44,6 +45,16 @@ _IRODORI_PRECISION = "fp32"
 _IRODORI_LATENT_DIM = 32
 _IRODORI_NORMALIZE_DB = -16.0
 _IRODORI_DETERMINISTIC_ENCODE = True
+
+
+class _PendingIrodoriReference(TypedDict):
+    speaker_id: str
+    cache_key: str
+    ranges: list[tuple[float, float]]
+    latent_path: Path
+    duration_sec: float
+    fingerprint: str
+    fingerprint_payload: dict[str, object]
 
 
 class SpeakerReferenceCache:
@@ -128,7 +139,7 @@ class SpeakerReferenceCache:
             previous_meta = {}
 
         reference_meta: dict[str, dict[str, object]] = {}
-        pending: list[dict[str, object]] = []
+        pending: list[_PendingIrodoriReference] = []
         for speaker_id, speaker_segments in speakers.items():
             ranges = _select_irodori_reference_ranges(
                 speaker_segments,
@@ -143,7 +154,7 @@ class SpeakerReferenceCache:
                 self._cache_dir / f"irodori_ref_latent_{cache_key}.pt"
             )
             duration = sum(end - start for start, end in ranges)
-            fingerprint_payload = {
+            fingerprint_payload: dict[str, object] = {
                 "schema_version": _IRODORI_CACHE_SCHEMA_VERSION,
                 "speaker_id": speaker_id,
                 "source_audio": source_identity,
@@ -155,7 +166,7 @@ class SpeakerReferenceCache:
             fingerprint = _json_sha256(fingerprint_payload)
             cached_info = previous_meta.get(speaker_id)
 
-            if _is_valid_irodori_latent_cache(
+            if isinstance(cached_info, dict) and _is_valid_irodori_latent_cache(
                 latent_path,
                 cached_info,
                 fingerprint=fingerprint,
@@ -512,7 +523,7 @@ def _build_pending_irodori_latents(
     media_path: Path,
     cache_dir: Path,
     codec_settings: dict[str, object],
-    pending: list[dict[str, object]],
+    pending: list[_PendingIrodoriReference],
 ) -> None:
     server_dir = IRODORI_TTS_DIR.expanduser().resolve()
     if not server_dir.is_dir():
@@ -608,9 +619,12 @@ def _run_irodori_reference_worker(
     environment["IRODORI_CODEC_PRECISION"] = _IRODORI_PRECISION
     environment["IRODORI_CODEC_DETERMINISTIC_ENCODE"] = "true"
 
+    manifest = load_json_if_exists(manifest_path)
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("speakers"), list):
+        raise PipelineError(f"Irodori 参照潜在のマニフェストが不正です: {manifest_path}")
     print_step(
         "  Irodori 参照潜在を短命プロセスで事前生成: "
-        f"{len(load_json_if_exists(manifest_path).get('speakers', []))} 話者"
+        f"{len(manifest['speakers'])} 話者"
     )
     process = subprocess.run(
         command,

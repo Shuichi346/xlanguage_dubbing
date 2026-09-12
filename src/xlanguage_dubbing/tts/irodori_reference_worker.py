@@ -101,7 +101,9 @@ def _update_cache_metadata(
 
 def build_reference_latents(manifest: dict[str, Any]) -> None:
     import torch
-    from irodori_tts.codec import DACVAECodec
+
+    # This worker runs in the separate Irodori-TTS-Server environment.
+    from irodori_tts.codec import DACVAECodec  # ty: ignore[unresolved-import]
 
     codec_settings = manifest["codec"]
     if codec_settings.get("precision") != "fp32":

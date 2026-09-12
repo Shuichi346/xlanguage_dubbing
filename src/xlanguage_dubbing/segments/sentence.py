@@ -1,31 +1,28 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 翻訳ユニット結合処理。
 """
 
 from __future__ import annotations
 
-from typing import List, Optional
-
 from xlanguage_dubbing.core.models import Segment
 from xlanguage_dubbing.utils import normalize_spaces
 
 
 def merge_sentence_units(
-    segments: List[Segment],
+    segments: list[Segment],
     *,
     max_sentences: int,
     merge_max_chars: int,
     max_gap_sec: float,
-) -> List[Segment]:
+) -> list[Segment]:
     """隣接する文を結合して翻訳ユニットを作成する。"""
     if not segments:
         return []
 
-    out: List[Segment] = []
-    buf_start: Optional[float] = None
-    buf_end: Optional[float] = None
+    out: list[Segment] = []
+    buf_start: float | None = None
+    buf_end: float | None = None
     buf_text = ""
     buf_count = 0
     buf_speaker = ""
@@ -63,7 +60,7 @@ def merge_sentence_units(
         if not t:
             continue
 
-        if buf_start is None:
+        if buf_start is None or buf_end is None:
             buf_start = seg.start
             buf_end = seg.end
             buf_text = t

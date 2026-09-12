@@ -10,6 +10,7 @@ from xlanguage_dubbing import irodori_tts
 from xlanguage_dubbing.core import pipeline
 from xlanguage_dubbing.core.models import Segment
 from xlanguage_dubbing.servers import health
+from xlanguage_dubbing.tts.reference import SpeakerReferenceCache
 
 
 class _AudioResponse:
@@ -38,8 +39,9 @@ class _Progress:
         pass
 
 
-class _ReferenceCache:
+class _ReferenceCache(SpeakerReferenceCache):
     def __init__(self, root: Path) -> None:
+        super().__init__(root, "irodori")
         self.paths = {}
         for speaker in "ABC":
             path = root / f"{speaker}.pt"
@@ -49,7 +51,7 @@ class _ReferenceCache:
     def get_irodori_speaker_reference_latent_path(self, speaker_id: str):
         return self.paths.get(speaker_id)
 
-    def get_irodori_speaker_reference_duration(self, _speaker_id: str) -> float:
+    def get_irodori_speaker_reference_duration(self, speaker_id: str) -> float:
         return 120.0
 
 

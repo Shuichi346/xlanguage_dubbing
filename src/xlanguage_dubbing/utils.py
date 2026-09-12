@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 共通ユーティリティ関数。
 """
@@ -13,7 +12,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 # macOS 環境で ffmpeg/ffprobe 等を探索するフォールバックパス
 _HOMEBREW_PATHS = [
@@ -98,7 +97,7 @@ def atomic_write_json(path: Path, obj: Any) -> None:
     )
 
 
-def load_json_if_exists(path: Path) -> Optional[Any]:
+def load_json_if_exists(path: Path) -> Any | None:
     """JSONファイルを読み込む。存在しない場合はNone。"""
     if not path.exists():
         return None

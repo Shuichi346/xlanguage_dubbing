@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Run the dubbing pipeline across the supported engine configuration matrix."""
 
 from __future__ import annotations
@@ -14,7 +13,6 @@ import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-
 
 ASR_ENGINES = ("vibevoice", "whisper")
 AUDIO_SEPARATION_VALUES = ("true", "false")

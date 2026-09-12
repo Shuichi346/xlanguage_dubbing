@@ -113,6 +113,17 @@ class IrodoriReferenceCacheTests(unittest.TestCase):
                     first_paths[speaker],
                 )
 
+    def test_invalid_manifest_does_not_start_worker(self) -> None:
+        manifest_path = self.root / "manifest.json"
+        for content in ("not json", "null", "[]", '{"speakers": null}'):
+            manifest_path.write_text(content, encoding="utf-8")
+            with mock.patch.object(reference.subprocess, "run") as run:
+                with self.assertRaises(reference.PipelineError):
+                    reference._run_irodori_reference_worker(
+                        manifest_path, server_dir=self.server_dir,
+                    )
+                run.assert_not_called()
+
     def test_corrupt_cache_regenerates_only_the_affected_speaker(self) -> None:
         patches = self._patch_generation()
         with patches[0], patches[1], patches[2]:
@@ -123,7 +134,7 @@ class IrodoriReferenceCacheTests(unittest.TestCase):
             )
 
         corrupt_path = cache.get_irodori_speaker_reference_latent_path("B")
-        self.assertIsNotNone(corrupt_path)
+        assert corrupt_path is not None
         corrupt_path.write_bytes(b"corrupt")
         self.worker_manifests.clear()
 
