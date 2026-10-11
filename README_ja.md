@@ -47,6 +47,7 @@
 - `VIDEO_FOLDER` に対応動画が存在しない場合、単一の動画ファイルパスを入力するよう促します。
 - `.mp4`、`.mkv`、`.mov`、`.webm`、`.m4v` の入力形式に対応しています。
 - デフォルトでは VibeVoice-ASR を使用し、話者情報を内包した多言語およびコードスイッチング転写を行います。
+- NeMo-Speech.cpp による文字起こしと、最大8人の話者分離を選択できます。
 - オプションモードとして whisper.cpp ASR（Silero VAD と pyannote 話者ダイアライゼーション付き）も利用できます。
 - Demucs の `--two-stems vocals` を使って、任意でボーカルと背景音を分離できます。
 - Demucs 分離が無効の場合は、元の音声をそのまま使うフォールバックパスを保持します。
@@ -174,7 +175,7 @@ uv run xlanguage-dubbing --generate-script
 
 | 設定 | 目的 |
 |---|---|
-| `ASR_ENGINE` | `vibevoice` または `whisper`。 |
+| `ASR_ENGINE` | `vibevoice`、`whisper`、`nemo-speech`。 |
 | `ENABLE_AUDIO_SEPARATION` | `true` のとき Demucs の `vocals` / `no_vocals` ステムを使用し、`false` のとき元のメディア音声を使用します。 |
 | `DEMUCS_MODEL` | Demucs モデル名、デフォルトは `htdemucs`。品質優先の場合は fine-tuned モデルの `htdemucs_ft` も使用できます。 |
 | `DEMUCS_DEVICE` | Demucs の推論デバイス。Apple Silicon 向けのデフォルトは `mps`。MPS が使えない、または不安定な場合は `cpu` を指定します。 |
@@ -185,6 +186,10 @@ uv run xlanguage-dubbing --generate-script
 | `VIBEVOICE_MODEL` | MLX VibeVoice-ASR モデル。 |
 | `VIBEVOICE_MAX_TOKENS` | VibeVoice の最大生成トークン数。 |
 | `VIBEVOICE_CONTEXT` | VibeVoice-ASR のオプションコンテキストプロンプト。 |
+| `NEMO_SPEECH_BIN` | インストール済みの NeMo-Speech.cpp 実行ファイル。デフォルトは `nemo-speech`。`~/.local/bin` も探索します。 |
+| `NEMO_SPEECH_MODEL` | ASR モデルIDまたはローカル GGUF パス。デフォルトは `nvidia/nemotron-3.5-asr-streaming-0.6b`。 |
+| `NEMO_SPEECH_DIAR_MODEL` | 話者分離モデルIDまたはローカル GGUF パス。デフォルトは `nvidia/Nemotron-3-Diarization`。最大8人。 |
+| `NEMO_SPEECH_DEVICE` | Apple Silicon 向けの `metal`（デフォルト）、または `cpu`。 |
 | `HF_AUTH_TOKEN` | whisper モードの pyannote ダイアライゼーションに必要な Hugging Face トークン。 |
 | `PYANNOTE_MODEL` | pyannote ダイアライゼーションパイプラインモデル。 |
 
@@ -234,6 +239,11 @@ uv run xlanguage-dubbing --generate-script
 |---|---|---|
 | `vibevoice` | 話者情報を統合した多言語またはコードスイッチング ASR を使いたい場合。 | デフォルトモード。Apple Silicon 上で MLX モデルを使用し、pyannote 話者ダイアライゼーションパスをスキップします。 |
 | `whisper` | VAD 付きの whisper.cpp ASR を使いたい場合。 | `scripts/setup_whisper.sh` が必要。話者 ID は pyannote.audio で割り当てられ、`HF_AUTH_TOKEN` が必要です。 |
+| `nemo-speech` | NeMo の文字起こしと話者分離をまとめて使いたい場合。 | インストール済み CLI と指定の Nemotron ASR／話者分離モデルを使用。最大8人で、pyannote は使用しません。 |
+
+NeMo を使う場合は `.env` の `ASR_ENGINE=nemo-speech` を指定します。`nemo-speech transcribe <audio.wav> --diarize --diar-model <model> --model <model> --device metal --json` を実行し、単語ごとの時刻と話者番号を吹き替え用セグメントへ変換します。参照音声の文字起こしも NeMo を使用し、その際は話者分離を省略します。`INPUT_LANG=auto` では言語引数を渡さず、CLI が単一の言語を返した場合はそれを使用し、それ以外はテキストから言語を判定します。
+
+インストール済みなら再インストールは不要です。未導入の場合は[公式インストール手順](https://github.com/NVIDIA/NeMo-Speech.cpp#installation)に従ってください。モデルの取得・キャッシュは CLI が管理します。必要に応じて `NEMO_SPEECH_BIN` に実行ファイルの絶対パスを設定できます。CPU で実行する場合は `NEMO_SPEECH_DEVICE=cpu` を指定します。[既定の話者分離モデル](https://huggingface.co/nvidia/Nemotron-3-Diarization)の話者枠は8人なので、9人以上の音声では同じ話者枠が再利用される可能性があります。
 
 ### TTS
 
@@ -281,6 +291,8 @@ Irodori モードは `Aratako/Irodori-TTS-v4-Small` を使用します。TTS サ
 - Demucs 分離が有効の場合：`temp/<video>`
 - Demucs 分離が無効の場合：`temp/<video>_rawaudio`
 
+NeMo のチェックポイントと参照音声は、選択した音声モードのディレクトリ内の `nemo-speech/` に保存します。他の ASR エンジンの結果を誤って再利用しません。検証済みの CLI 出力は、このディレクトリの `nemo_speech.json` に保存します。
+
 `progress.json` がソース動画のサイズおよび更新日時と一致する場合、コマンドを再実行すると完了済みの作業が再開されます。特定の動画を最初からやり直したい場合は、その動画の一時ディレクトリと既存の最終出力ファイルを削除してください。
 
 ## トラブルシューティング
@@ -317,7 +329,7 @@ uv run python -m spacy download en_core_web_sm
 
 ### pyannote が `HF_AUTH_TOKEN` が未設定と報告する
 
-`ASR_ENGINE=whisper` を使用する前に、`.env` で `HF_AUTH_TOKEN` を設定してください。VibeVoice モードは pyannote ダイアライゼーションパスを使用しません。
+`ASR_ENGINE=whisper` を使用する前に、`.env` で `HF_AUTH_TOKEN` を設定してください。VibeVoice と NeMo モードは pyannote ダイアライゼーションパスを使用しません。
 
 ### Irodori-TTS-Server が起動中に終了する
 
@@ -374,7 +386,7 @@ uv run python -m unittest discover -s tests -v
 ./scripts/run_config_matrix.py --clean
 ```
 
-マトリクス実行ツールは `INPUT_LANG=en` と `OUTPUT_LANG=ja` を固定し、`ASR_ENGINE`・`ENABLE_AUDIO_SEPARATION`・`TTS_ENGINE` のすべての組み合わせを実行し、ケースごとのログと `summary.json` を `temp/config_matrix/` 以下に出力します。フルメディアパイプラインを起動せずに予定された組み合わせを確認するには、以下を実行してください：
+マトリクス実行ツールは `INPUT_LANG=en` と `OUTPUT_LANG=ja` を固定し、`ASR_ENGINE`・`ENABLE_AUDIO_SEPARATION`・`TTS_ENGINE` の全18通りを実行し、ケースごとのログと `summary.json` を `temp/config_matrix/` 以下に出力します。フルメディアパイプラインを起動せずに予定された組み合わせを確認するには、以下を実行してください：
 
 ```bash
 ./scripts/run_config_matrix.py --dry-run

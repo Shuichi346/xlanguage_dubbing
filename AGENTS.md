@@ -8,6 +8,8 @@ Project instructions for coding agents working in this repository.
 - Do not remove the Demucs `--two-stems vocals` contract unless the pipeline is updated to consume a different voice/background stem layout.
 - Keep Demucs model/device configurable through `DEMUCS_MODEL` and `DEMUCS_DEVICE`; do not hard-code `cpu` or `mps` in the separation command.
 - Keep `scripts/run_config_matrix.py` aligned with supported values whenever `ASR_ENGINE`, `ENABLE_AUDIO_SEPARATION`, or `TTS_ENGINE` options change.
+- Keep `ASR_ENGINE=nemo-speech` on the installed NeMo-Speech.cpp CLI with explicit ASR and diarization models. Parse JSON word times in seconds and 1-based speaker tags (1–8), map them to `SPEAKER_00`–`SPEAKER_07`, and skip pyannote. Reference clips use NeMo without diarization; device values are `metal` or `cpu`.
+- Keep NeMo checkpoints under the audio mode's `nemo-speech/` subdirectory to avoid reusing another ASR engine's segments, translations, or TTS references.
 - Keep VoxCPM2 in Controllable Cloning mode: pass per-segment `reference_wav_path` only for synthesis, and keep VoxCPM2 reference cache artifacts under `voxcpm2_*` names.
 - Keep Irodori-TTS-v4-Small in server API mode: use `Aratako/Irodori-TTS-v4-Small`, pass each speaker's cached reference latent as `irodori.ref_latent`, keep the `8`-step Sway Sampling profile, do not send Caption / Style Prompt, and do not set fixed `seconds`.
 - Generate Irodori reference latents in a short-lived process using the Irodori-TTS-Server environment before starting the long-running TTS server. Load only the DACVAE codec, encode each selected short utterance separately as 48 kHz mono FP32 with deterministic encoding and `normalize_db=-16.0`, then concatenate the latents in utterance order.

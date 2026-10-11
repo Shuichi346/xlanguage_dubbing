@@ -4,6 +4,8 @@
 
 ### Added
 
+- Added `ASR_ENGINE=nemo-speech` for joint NeMo-Speech.cpp transcription and speaker diarization with Nemotron 3.5 ASR and Nemotron 3 Diarization, supporting up to eight speakers.
+- Added configurable NeMo CLI/model/device settings, NeMo reference-clip transcription, isolated NeMo checkpoints within each audio mode, and six NeMo cases in the 18-case configuration matrix.
 - Added Ruff and ty as project development dependencies with documented quick lint/type checks.
 - Added optional Demucs voice/background separation before ASR and TTS reference extraction.
 - Added `ENABLE_AUDIO_SEPARATION`, `DEMUCS_MODEL`, and `DEMUCS_DEVICE` environment settings; disabled mode keeps the previous raw-audio workflow.

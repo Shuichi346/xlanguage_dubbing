@@ -10,6 +10,7 @@ import sys
 from importlib.util import find_spec
 from pathlib import Path
 
+from xlanguage_dubbing.asr import get_asr_engine
 from xlanguage_dubbing.config import (
     DEMUCS_DEVICE,
     DEMUCS_MODEL,
@@ -98,6 +99,13 @@ def preflight_checks() -> None:
     which_or_raise("ffmpeg")
     which_or_raise("ffprobe")
     ensure_dir(TEMP_ROOT)
+
+    asr_engine = get_asr_engine()
+    print_step(f"  ASR エンジン: {asr_engine}")
+    if asr_engine == "nemo-speech":
+        from xlanguage_dubbing.asr.nemo_speech import resolve_nemo_speech_cli
+        print_step(f"  NeMo-Speech CLI: {resolve_nemo_speech_cli()}")
+        print_step("  話者分離: 最大8人")
 
     if ENABLE_AUDIO_SEPARATION and find_spec("demucs") is None:
         raise PipelineError(
@@ -217,10 +225,14 @@ def _process_folder_videos(videos: list[Path]) -> int:
 
 
 def _work_dir_for_video(video_path: Path) -> Path:
-    """Keep temporary outputs separate for each audio source mode."""
+    """Keep NeMo checkpoints isolated within each audio source mode."""
     if ENABLE_AUDIO_SEPARATION:
-        return TEMP_ROOT / video_path.stem
-    return TEMP_ROOT / f"{video_path.stem}_rawaudio"
+        work_dir = TEMP_ROOT / video_path.stem
+    else:
+        work_dir = TEMP_ROOT / f"{video_path.stem}_rawaudio"
+    if get_asr_engine() == "nemo-speech":
+        work_dir /= "nemo-speech"
+    return work_dir
 
 
 def main() -> int:
