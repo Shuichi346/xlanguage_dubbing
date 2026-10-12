@@ -1,6 +1,8 @@
 # Changelog
 
-## Fixed
+## DATE UNKNOWN
+
+### Fixed
 
 - Corrected the TorchCodec audio loader to use `get_all_samples()` instead of the nonexistent `decode()` method, preserving existing fallback loaders.
 - Rejected malformed Irodori worker manifests with a pipeline error before subprocess launch.
@@ -8,7 +10,7 @@
 - Fixed CAT-Translate-7b GGUF inference adding a duplicate BOS token, which could reduce translation quality and cause wrong-language or prompt-contaminated output.
 - Stored VoxCPM2 reference metadata and segment clips under `voxcpm2_*` names instead of `omnivoice_*` names.
 
-## Added
+### Added
 
 - Added `ASR_ENGINE=nemo-speech` for joint NeMo-Speech.cpp transcription and speaker diarization with Nemotron 3.5 ASR and Nemotron 3 Diarization, supporting up to eight speakers.
 - Added configurable NeMo CLI/model/device settings, NeMo reference-clip transcription, isolated NeMo checkpoints within each audio mode, and six NeMo cases in the 18-case configuration matrix.
@@ -22,7 +24,7 @@
 - Added `IRODORI_REFERENCE_MAX_SEC` for Irodori long-reference construction.
 - Added `scripts/run_config_matrix.py` for developer verification across all supported `ASR_ENGINE`, `ENABLE_AUDIO_SEPARATION`, and `TTS_ENGINE` combinations on `input_videos/test.mp4`.
 
-## Changed
+### Changed
 
 - Updated the default Irodori checkpoint to `Aratako/Irodori-TTS-v4-Small` and preserved the `8`-step Sway Sampling profile.
 - Changed Irodori cloning to encode each selected short utterance in a short-lived server-environment process, concatenate up to 120 seconds of latents, and atomically cache one validated `.pt` tensor per speaker.
@@ -114,7 +116,9 @@
 
 - Removed Kokoro TTS support completely.
 
-## [6.0.0]
+## DATE UNKNOWN
+
+Version: 6.0.0.
 
 ### Added
 
