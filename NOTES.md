@@ -1,5 +1,12 @@
 # Notes
 
+## 2026-10-11
+
+- Integrated the installed NeMo-Speech.cpp 0.2.0 CLI as `ASR_ENGINE=nemo-speech`, explicitly selecting `nvidia/nemotron-3.5-asr-streaming-0.6b` and `nvidia/Nemotron-3-Diarization`. Metal and CPU are configurable; no Python NeMo dependency or installation step was added.
+- Converted JSON word times in seconds and 1-based speaker tags into bounded turns and reference intervals. Tags 1–8 map to `SPEAKER_00`–`SPEAKER_07`; out-of-range tags are rejected, and unassigned words are kept without inventing a speaker. Standalone zero-duration punctuation attaches to the preceding turn.
+- Kept NeMo checkpoints in a `nemo-speech/` subdirectory within each existing separated/raw-audio work directory to avoid reusing another engine's segments, translations, or references. Reference transcription uses NeMo without loading the diarizer.
+- Verified both requested cached models on Metal using a 25-second, two-speaker clip: the CLI returned timed speaker tags, the Python adapter produced nine turns, and reference transcription succeeded. All 31 unit tests, Ruff, ty, and the 18-case matrix dry-run passed. Full translation, TTS inference, and final video rendering were not rerun for this addition.
+
 ## 2026-09-10
 
 - Reproduced FFmpeg 9.0.1 concat decoding failures (`blocksize 4064 > 1024`) with the cached Steve Jobs OmniVoice/raw-audio job. Silence and speech FLACs had compatible rates/channels but different STREAMINFO block sizes.

@@ -249,22 +249,32 @@ def process_one_video(
 
         diarization = None
     else:
-        if asr_engine == "vibevoice":
-            from xlanguage_dubbing.asr.vibevoice import (
-                release_vibevoice_model,
-                vibevoice_transcribe,
-            )
+        if asr_engine in {"vibevoice", "nemo-speech"}:
+            if asr_engine == "nemo-speech":
+                from xlanguage_dubbing.asr.nemo_speech import nemo_speech_transcribe
 
-            print_step("2. VibeVoice-ASR で文字起こし（コードスイッチング対応）")
-            segments_raw, diarization = vibevoice_transcribe(wav_whisper)
+                print_step("2. NeMo-Speech で文字起こし・話者分離（最大8人）")
+                segments_raw, diarization = nemo_speech_transcribe(wav_whisper)
+                integrated_asr_name = "NeMo-Speech"
+            else:
+                from xlanguage_dubbing.asr.vibevoice import (
+                    release_vibevoice_model,
+                    vibevoice_transcribe,
+                )
+
+                print_step("2. VibeVoice-ASR で文字起こし（コードスイッチング対応）")
+                segments_raw, diarization = vibevoice_transcribe(wav_whisper)
+                release_vibevoice_model()
+                integrated_asr_name = "VibeVoice-ASR"
             if not segments_raw:
-                raise PipelineError("VibeVoice-ASR セグメントが空です。")
+                raise PipelineError(f"{integrated_asr_name} セグメントが空です。")
             print_step(f"   セグメント数: {len(segments_raw)}")
-
-            release_vibevoice_model()
             force_memory_cleanup()
 
-            detected_lang = detect_segments_language(segments_raw, INPUT_LANG)
+            asr_lang = segments_raw[0].detected_lang
+            detected_lang = detect_segments_language(
+                segments_raw, INPUT_LANG if INPUT_LANG not in {"", "auto"} else asr_lang or INPUT_LANG
+            )
             progress.set_artifact("detected_lang", detected_lang)
 
             # 各セグメントの detected_lang フィールドを埋める
@@ -274,9 +284,11 @@ def process_one_video(
             progress.set_artifact("asr_srt", str(srt_src_path))
             progress.save()
 
-            print_step("3. 話者分離: VibeVoice-ASR 内蔵のため省略")
-            print_step("4. 話者ID割り当て: VibeVoice-ASR 内蔵のため省略")
+            print_step(f"3. 話者分離: {integrated_asr_name} の結果を使用")
+            print_step(f"4. 話者ID割り当て: {integrated_asr_name} の結果を使用")
             segments_with_speaker = segments_raw
+            progress.set_step("diarization_done", True)
+            progress.save()
         else:
             from xlanguage_dubbing.asr.whisper import (
                 release_whisper_model,

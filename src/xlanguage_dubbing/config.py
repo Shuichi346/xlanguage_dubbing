@@ -82,7 +82,18 @@ OUTPUT_LANG = _env("OUTPUT_LANG", "ja").strip().lower()
 # ASR共通
 # =========================
 
-ASR_ENGINE = _env("ASR_ENGINE", "vibevoice")  # "vibevoice" or "whisper"
+ASR_ENGINE = _env("ASR_ENGINE", "vibevoice")  # "vibevoice", "whisper", or "nemo-speech"
+
+# NeMo-Speech.cpp uses Metal rather than the PyTorch MPS device name.
+NEMO_SPEECH_BIN = _env("NEMO_SPEECH_BIN", "nemo-speech").strip() or "nemo-speech"
+NEMO_SPEECH_MODEL = _env(
+    "NEMO_SPEECH_MODEL", "nvidia/nemotron-3.5-asr-streaming-0.6b"
+).strip() or "nvidia/nemotron-3.5-asr-streaming-0.6b"
+NEMO_SPEECH_DIAR_MODEL = _env(
+    "NEMO_SPEECH_DIAR_MODEL", "nvidia/Nemotron-3-Diarization"
+).strip() or "nvidia/Nemotron-3-Diarization"
+NEMO_SPEECH_DEVICE = _env_choice("NEMO_SPEECH_DEVICE", "metal", {"cpu", "metal"})
+NEMO_SPEECH_MAX_SPEAKERS = 8
 
 # =========================
 # 音声分離（Demucs）

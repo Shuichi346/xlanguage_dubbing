@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
-ASR_ENGINES = ("vibevoice", "whisper")
+ASR_ENGINES = ("vibevoice", "whisper", "nemo-speech")
 AUDIO_SEPARATION_VALUES = ("true", "false")
 TTS_ENGINES = ("omnivoice", "voxcpm2", "irodori")
 

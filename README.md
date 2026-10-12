@@ -48,6 +48,7 @@ This demo shows the result of translating and dubbing a short English video into
 - Supports `.mp4`, `.mkv`, `.mov`, `.webm`, and `.m4v` inputs.
 - Uses VibeVoice-ASR by default for multilingual and code-switched transcription with built-in speaker information.
 - Offers whisper.cpp ASR with Silero VAD and pyannote speaker diarization as an optional mode.
+- Offers NeMo-Speech.cpp transcription with integrated diarization for up to eight speakers.
 - Optionally separates vocals and background audio with Demucs `--two-stems vocals`.
 - Preserves the raw-audio fallback path when Demucs separation is disabled.
 - Normalizes ASR segments with merge rules, spaCy sentence splitting, and sentence-unit merging.
@@ -174,7 +175,7 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 
 | Setting | Purpose |
 |---|---|
-| `ASR_ENGINE` | `vibevoice` or `whisper`. |
+| `ASR_ENGINE` | `vibevoice`, `whisper`, or `nemo-speech`. |
 | `ENABLE_AUDIO_SEPARATION` | Use Demucs `vocals` / `no_vocals` stems when `true`; use original media audio when `false`. |
 | `DEMUCS_MODEL` | Demucs model name, default `htdemucs`. Use `htdemucs_ft` for the fine-tuned model when quality is preferred over speed. |
 | `DEMUCS_DEVICE` | Demucs inference device, default `mps` for Apple Silicon. Set `cpu` when MPS is unavailable or unstable. |
@@ -185,6 +186,10 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 | `VIBEVOICE_MODEL` | MLX VibeVoice-ASR model. |
 | `VIBEVOICE_MAX_TOKENS` | Maximum VibeVoice generation tokens. |
 | `VIBEVOICE_CONTEXT` | Optional context prompt for VibeVoice-ASR. |
+| `NEMO_SPEECH_BIN` | Installed NeMo-Speech.cpp executable; defaults to `nemo-speech`, with a `~/.local/bin` fallback. |
+| `NEMO_SPEECH_MODEL` | ASR model ID or local GGUF path; defaults to `nvidia/nemotron-3.5-asr-streaming-0.6b`. |
+| `NEMO_SPEECH_DIAR_MODEL` | Diarization model ID or local GGUF path; defaults to `nvidia/Nemotron-3-Diarization`. Up to eight speakers. |
+| `NEMO_SPEECH_DEVICE` | `metal` (default on Apple Silicon) or `cpu`. |
 | `HF_AUTH_TOKEN` | Hugging Face token required by pyannote diarization in whisper mode. |
 | `PYANNOTE_MODEL` | pyannote diarization pipeline model. |
 
@@ -232,6 +237,11 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 |---|---|---|
 | `vibevoice` | You want multilingual or code-switched ASR with integrated speaker information. | Default mode. Uses MLX models on Apple Silicon and skips the pyannote speaker diarization pass. |
 | `whisper` | You want whisper.cpp ASR with VAD. | Requires `scripts/setup_whisper.sh`; speaker IDs are assigned with pyannote.audio and require `HF_AUTH_TOKEN`. |
+| `nemo-speech` | You want native NeMo transcription and integrated speaker tags. | Uses the installed CLI and explicit Nemotron ASR/diarization models. Supports up to eight speakers and skips pyannote. |
+
+To select NeMo, set `ASR_ENGINE=nemo-speech` in `.env`. The pipeline invokes `nemo-speech transcribe <audio.wav> --diarize --diar-model <model> --model <model> --device metal --json`, converts word times and speaker tags into dubbing segments, and uses NeMo without diarization for reference-clip text. `INPUT_LANG=auto` omits the language argument; a single language reported by the CLI is used before falling back to text-based language detection.
+
+If NeMo is already installed, no installation is needed. Otherwise, follow the [official installation guide](https://github.com/NVIDIA/NeMo-Speech.cpp#installation). The CLI manages its model downloads/cache. Set `NEMO_SPEECH_BIN` to an absolute executable path if needed, or `NEMO_SPEECH_DEVICE=cpu` for CPU inference. The default [Nemotron diarizer](https://huggingface.co/nvidia/Nemotron-3-Diarization) has eight speaker slots; audio containing more speakers may reuse those slots.
 
 ### TTS
 
@@ -279,6 +289,8 @@ Temporary directories are isolated by audio source mode:
 - `temp/<video>` when Demucs separation is enabled.
 - `temp/<video>_rawaudio` when Demucs separation is disabled.
 
+NeMo stores its checkpoints and references in a `nemo-speech/` subdirectory of the selected audio-mode directory, so selecting NeMo does not reuse VibeVoice/Whisper outputs. The validated CLI output is saved as `nemo_speech.json` there.
+
 Rerunning the command resumes completed work when `progress.json` matches the source video's size and modification time. To force a full rerun for one video, remove that video's temporary directory and any existing final output file.
 
 ## Troubleshooting
@@ -315,7 +327,7 @@ Then confirm `WHISPER_CPP_DIR=./whisper.cpp` in `.env`.
 
 ### pyannote reports that `HF_AUTH_TOKEN` is unset
 
-Set `HF_AUTH_TOKEN` in `.env` before using `ASR_ENGINE=whisper`. VibeVoice mode does not use the pyannote diarization pass.
+Set `HF_AUTH_TOKEN` in `.env` before using `ASR_ENGINE=whisper`. VibeVoice and NeMo modes do not use the pyannote diarization pass.
 
 ### Irodori-TTS-Server exits during startup
 
@@ -372,7 +384,7 @@ To verify the supported ASR, audio-source, and TTS configuration matrix against 
 ./scripts/run_config_matrix.py --clean
 ```
 
-The matrix runner fixes `INPUT_LANG=en` and `OUTPUT_LANG=ja`, runs every combination of `ASR_ENGINE`, `ENABLE_AUDIO_SEPARATION`, and `TTS_ENGINE`, and writes per-case logs plus `summary.json` under `temp/config_matrix/`. To inspect the planned combinations without launching the full media pipeline, run:
+The matrix runner fixes `INPUT_LANG=en` and `OUTPUT_LANG=ja`, runs all 18 combinations of `ASR_ENGINE`, `ENABLE_AUDIO_SEPARATION`, and `TTS_ENGINE`, and writes per-case logs plus `summary.json` under `temp/config_matrix/`. To inspect the planned combinations without launching the full media pipeline, run:
 
 ```bash
 ./scripts/run_config_matrix.py --dry-run
