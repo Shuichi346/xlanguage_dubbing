@@ -267,7 +267,7 @@ VOICE_DESIGN_SEED=42
 AGE_GENDER_MODEL_DIR=./models/age-gender
 ```
 
-年齢・性別の自動推定には `uv sync --extra voice-design --inexact` で追加依存を導入します。初回に[audEERINGの6層ONNXモデル](https://github.com/audeering/w2v2-age-gender-how-to)を取得し、CPUで男女・青年／中年を推定します。互換性のある24層ONNXモデルを `AGE_GENDER_MODEL_DIR` に配置することもできます。不明、低信頼、子供判定、モデル未導入、音声不正の場合は大人の男性を使います。この推定モデルのライセンスは **CC BY-NC-SA 4.0** で、商用利用には提供元の商用ライセンスが必要です。
+年齢・性別の推定には、ご指定の[公式audEERING 24層モデル](https://huggingface.co/audeering/wav2vec2-large-robust-24-ft-age-gender)をHugging Faceから直接取得します。保存先はプロジェクト直下の `models/age-gender/hf24/`（`AGE_GENDER_MODEL_DIR` で変更可能）、容量は約1.27GBです。`models/` 全体をGitの管理対象から除外しています。相対パスはプロジェクト直下を基準とし、作業フォルダーが `temp/` でも判定モデルは移りません。生成した参照音声・クローン用潜在キャッシュは `temp/` に保存します。既存のTorch／Transformersで固定リビジョンのsafetensors重みをCPU推論します。Zenodoや第三者のミラーサイトからは取得しません。男女・青年／中年を推定し、不明、低信頼、子供判定、モデル未取得、音声不正の場合は大人の男性を使います。手動で互換性のある `model.onnx` を配置する場合だけ、`uv sync --extra voice-design --inexact` でaudonnxを追加します。既存のローカル6層ONNXキャッシュにも対応します。推定モデルのライセンスは **CC BY-NC-SA 4.0** で、商用利用には提供元の商用ライセンスが必要です。
 
 VoxCPM2は声の説明文、Irodoriは初回だけCaptionを使用します。OmniVoiceは男女・青年／中年・普通の声高を属性から選択します。翻訳先は日本語・英語に限定され、Irodori v4 Smallは日本語のみ対応します。ご指定の天気・駅前・青い屋根の文章を翻訳先言語で読み上げ、その生成音声またはIrodori参照潜在を以後のクローンに使います。モデルの重みを追加学習する方式ではありません。
 

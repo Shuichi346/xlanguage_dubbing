@@ -13,7 +13,12 @@ import soundfile as sf
 from xlanguage_dubbing import config
 from xlanguage_dubbing.audio.ffmpeg import extract_audio_segment
 from xlanguage_dubbing.core.models import Segment
-from xlanguage_dubbing.tts.age_gender import AgeGenderEstimator, VoiceProfile
+from xlanguage_dubbing.tts.age_gender import (
+    HF_MODEL_ID,
+    HF_MODEL_REVISION,
+    AgeGenderEstimator,
+    VoiceProfile,
+)
 from xlanguage_dubbing.tts.reference import (
     SpeakerReferenceCache,
     _file_sha256,
@@ -87,6 +92,7 @@ def design_settings() -> dict:
         "seed": config.VOICE_DESIGN_SEED,
         "model_options": options,
         "age_gender_model": str(config.AGE_GENDER_MODEL_DIR.resolve()),
+        "age_gender_checkpoint": {"repo": HF_MODEL_ID, "revision": HF_MODEL_REVISION},
         "reference_text": REFERENCE_TEXT.get(config.OUTPUT_LANG, ""),
     }
 

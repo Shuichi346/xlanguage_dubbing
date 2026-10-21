@@ -113,9 +113,14 @@ TTS_ENGINE = _env("TTS_ENGINE", "omnivoice").strip().lower()
 # Design a native target-language reference once per speaker before cloning.
 ENABLE_VOICE_DESIGN = _env_bool("ENABLE_VOICE_DESIGN", False)
 VOICE_DESIGN_SEED = _env_int("VOICE_DESIGN_SEED", 42)
-AGE_GENDER_MODEL_DIR = Path(
+_AGE_GENDER_MODEL_DIR = Path(
     _env("AGE_GENDER_MODEL_DIR", "./models/age-gender")
 ).expanduser()
+# Resolve persistent model storage against the project, never a job's temp cwd.
+AGE_GENDER_MODEL_DIR = (
+    _AGE_GENDER_MODEL_DIR if _AGE_GENDER_MODEL_DIR.is_absolute()
+    else Path(__file__).resolve().parents[2] / _AGE_GENDER_MODEL_DIR
+)
 
 # =========================
 # whisper.cpp（CLIバイナリ + VAD）

@@ -135,6 +135,7 @@ class VoiceDesignCacheTests(unittest.TestCase):
             voice_design.build_designed_references(self.media, segments, self.cache)
             paths = {speaker: self.cache.get_omnivoice_reference_path(speaker) for speaker in "ABCD"}
             originals = {speaker: _file_sha256(path) for speaker, path in paths.items() if path}
+            original_audio = {speaker: sf.read(path)[0] for speaker, path in paths.items() if path}
             original_seeds = [entry["seed"] for entry in self.generations]
             affected = paths["B"]
             assert affected is not None
@@ -147,7 +148,11 @@ class VoiceDesignCacheTests(unittest.TestCase):
             self.assertEqual(self.generations[-1]["seed"], original_seeds[1])
             for speaker, path in paths.items():
                 assert path is not None
-                self.assertEqual(_file_sha256(path), originals[speaker])
+                if speaker == "B":
+                    # FLOAT WAV headers may contain a new PEAK timestamp on regeneration.
+                    np.testing.assert_array_equal(sf.read(path)[0], original_audio[speaker])
+                else:
+                    self.assertEqual(_file_sha256(path), originals[speaker])
 
     def test_unknown_speaker_is_adult_male_without_acoustic_inference(self):
         segments = [Segment(0, 0.0, 2.0, "unknown", "こんにちは", "")]

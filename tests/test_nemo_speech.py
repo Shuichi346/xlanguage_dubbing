@@ -137,7 +137,10 @@ class NemoSpeechTests(unittest.TestCase):
             self.assertEqual(nemo.resolve_nemo_speech_cli(), str(Path.home() / ".local/bin/nemo-speech"))
 
     def test_work_directories_isolate_engines_and_audio_sources(self) -> None:
-        with mock.patch.object(cli, "TEMP_ROOT", Path("temp")):
+        with (
+            mock.patch.object(cli, "TEMP_ROOT", Path("temp")),
+            mock.patch.object(cli, "ENABLE_VOICE_DESIGN", False),
+        ):
             for separated, base in ((True, "video"), (False, "video_rawaudio")):
                 with mock.patch.object(cli, "ENABLE_AUDIO_SEPARATION", separated):
                     with mock.patch.object(asr, "ASR_ENGINE", "nemo-speech"):
@@ -163,6 +166,7 @@ class NemoSpeechTests(unittest.TestCase):
                 cache = mock.Mock(cache_dir=root / "work" / "speaker_refs")
                 with ExitStack() as stack:
                     replacements = {
+                        "ENABLE_VOICE_DESIGN": False,
                         "get_asr_engine": lambda: "nemo-speech",
                         "ENABLE_AUDIO_SEPARATION": separated,
                         "INPUT_LANG": "auto",

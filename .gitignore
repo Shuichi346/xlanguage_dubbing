@@ -14,4 +14,4 @@ start_servers.sh
 whisper.cpp/
 uv.lock
 Irodori-TTS-Server/
-models/age-gender/
+models/

@@ -1,12 +1,9 @@
-"""Estimate coarse voice attributes with audEERING's optional ONNX model."""
+"""Estimate coarse voice attributes with audEERING's local speech models."""
 
 from __future__ import annotations
 
 import gc
 import importlib
-import shutil
-import tempfile
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,11 +12,9 @@ import soundfile as sf
 
 from xlanguage_dubbing.utils import print_step
 
-MODEL_URL = (
-    "https://zenodo.org/record/7761387/files/"
-    "w2v2-L-robust-6-age-gender.25c844af-1.1.1.zip"
-)
-MODEL_REVISION = "w2v2-L-robust-6-age-gender-1.1.1"
+HF_MODEL_ID = "audeering/wav2vec2-large-robust-24-ft-age-gender"
+HF_MODEL_REVISION = "bad2737f529168bc3d3fcd97edfaba9583c7d36d"
+LEGACY_ONNX_REVISION = "w2v2-L-robust-6-age-gender-1.1.1"
 SAMPLE_RATE = 16000
 MAX_SAMPLE_SECONDS = 10
 
@@ -65,7 +60,7 @@ def profile_from_outputs(outputs: dict) -> VoiceProfile:
 
 
 class AgeGenderEstimator:
-    """Lazily load one CPU session and release it before TTS model loading."""
+    """Lazily load one CPU model and release it before TTS model loading."""
 
     def __init__(self, model_dir: Path) -> None:
         self.model_dir = model_dir.expanduser()
@@ -75,38 +70,19 @@ class AgeGenderEstimator:
         self._closed = False
 
     def _download_model(self) -> Path:
-        # A supplied model directory may also contain a compatible 24-layer export.
-        if (self.model_dir / "model.onnx").is_file():
-            return self.model_dir
-        destination = self.model_dir / MODEL_REVISION
-        if (destination / "model.onnx").is_file():
-            return destination
-        self.model_dir.mkdir(parents=True, exist_ok=True)
-        audeer = importlib.import_module("audeer")
-        print_step("  年齢・性別推定モデルを初回ダウンロード中 (audEERING, CPU)")
-        with tempfile.TemporaryDirectory(prefix=".age_gender_", dir=self.model_dir) as work:
-            stage = Path(work)
-            archive = stage / "model.zip"
-            with urllib.request.urlopen(MODEL_URL, timeout=30) as response, archive.open("wb") as output:
-                shutil.copyfileobj(response, output)
-            payload = stage / "model"
-            payload.mkdir()
-            audeer.extract_archive(str(archive), str(payload))
-            if not (payload / "model.onnx").is_file():
-                raise ValueError("Downloaded age/gender archive has no model.onnx")
-            # Publish the complete directory only after extraction has succeeded.
-            if destination.exists():
-                if (destination / "model.onnx").is_file():
-                    return destination
-                raise ValueError(f"Incomplete age/gender model cache: {destination}")
-            try:
-                payload.replace(destination)
-            except OSError:
-                # Another pipeline may publish between the existence check and rename.
-                if (destination / "model.onnx").is_file():
-                    return destination
-                raise
-        return destination
+        from huggingface_hub import snapshot_download
+
+        print_step("  年齢・性別推定モデルを準備中 (audEERING 24層, Hugging Face, CPU)")
+        # The Hub uses resumable downloads, file locks and atomic publication.
+        return Path(
+            snapshot_download(
+                HF_MODEL_ID,
+                revision=HF_MODEL_REVISION,
+                local_dir=str(self.model_dir / "hf24"),
+                allow_patterns=["config.json", "preprocessor_config.json", "model.safetensors"],
+                max_workers=2,
+            )
+        )
 
     def _load_model(self):
         if self._load_attempted:
@@ -115,14 +91,28 @@ class AgeGenderEstimator:
             return self._model
         self._load_attempted = True
         try:
-            audonnx = importlib.import_module("audonnx")
-            root = self._download_model()
-            self._model = audonnx.load(str(root), device="cpu", num_workers=2)
+            # Preserve supplied ONNX exports and already downloaded legacy caches.
+            onnx_root = next(
+                (
+                    root
+                    for root in (self.model_dir, self.model_dir / LEGACY_ONNX_REVISION)
+                    if (root / "model.onnx").is_file()
+                ),
+                None,
+            )
+            if onnx_root is not None:
+                audonnx = importlib.import_module("audonnx")
+                self._model = audonnx.load(str(onnx_root), device="cpu", num_workers=2)
+            else:
+                from xlanguage_dubbing.tts.age_gender_torch import HuggingFacePredictor
+
+                self._model = HuggingFacePredictor(self._download_model())
             return self._model
         except Exception as exc:
             self._load_error = (
-                "Age/gender model unavailable; install the voice-design extra "
-                f"(uv sync --extra voice-design): {exc}"
+                "Age/gender model unavailable; check the Hugging Face connection "
+                "and model cache (local ONNX requires the voice-design extra): "
+                f"{exc}"
             )
             raise RuntimeError(self._load_error) from exc
 
