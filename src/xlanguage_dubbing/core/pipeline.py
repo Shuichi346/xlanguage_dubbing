@@ -31,12 +31,12 @@ from xlanguage_dubbing.audio.segment_io import (
 )
 from xlanguage_dubbing.config import (
     ENABLE_AUDIO_SEPARATION,
+    ENABLE_VOICE_DESIGN,
     INPUT_LANG,
     KEEP_TEMP,
     MIN_SEGMENT_SEC,
     ORIGINAL_VOLUME,
     OUTPUT_LANG,
-    OUTPUT_SUFFIX,
     SPACY_CHUNK_GAP_SEC,
     SPACY_CHUNK_MAX_CHARS,
     SPACY_CHUNK_MAX_SEC,
@@ -130,7 +130,10 @@ def process_one_video(
     print_step(f"=== 開始: {video_path} ===")
     print_step(f"  入力言語: {INPUT_LANG} → 出力言語: {OUTPUT_LANG}")
 
-    out_path = video_path.with_name(video_path.stem + OUTPUT_SUFFIX)
+    from xlanguage_dubbing.tts.voice_design import output_path_for_video, validate_voice_design
+    if ENABLE_VOICE_DESIGN:
+        validate_voice_design(TTS_ENGINE, OUTPUT_LANG)
+    out_path = output_path_for_video(video_path)
     if out_path.exists():
         print_step(f"スキップ（出力済み）: {out_path}")
         return
@@ -387,7 +390,9 @@ def process_one_video(
     )
 
     # ===== 6. 話者リファレンス音声生成 =====
-    if _is_irodori_tts():
+    if ENABLE_VOICE_DESIGN:
+        print_step("6. 話者別ボイスデザインは翻訳モデル解放後に生成します")
+    elif _is_irodori_tts():
         print_step(
             "6. Irodori-TTS 用の話者別参照潜在キャッシュを生成"
         )
@@ -432,23 +437,36 @@ def process_one_video(
     release_all_translation_models()
     force_memory_cleanup()
 
+    tts_work_dir = work_dir
+    if ENABLE_VOICE_DESIGN:
+        from xlanguage_dubbing.tts.reference import _json_sha256
+        from xlanguage_dubbing.tts.voice_design import build_designed_references
+        voice_fingerprint = build_designed_references(voice_audio_path, segments_src, ref_cache)
+        render_fingerprint = _json_sha256({
+            "voices": voice_fingerprint,
+            "segments": [(s.speaker_id, s.start, s.end, s.text_tgt) for s in segments_translated],
+        })
+        tts_work_dir = work_dir / "render" / render_fingerprint[:20]
+        seg_audio_dir = tts_work_dir / "seg_audio"
+        ensure_dir(seg_audio_dir)
+
     # ===== 8. TTS =====
     if _get_tts_engine_name() == "voxcpm2":
         _run_tts_voxcpm2(
-            segments_translated, seg_audio_dir, work_dir, progress, ref_cache
+            segments_translated, seg_audio_dir, tts_work_dir, progress, ref_cache
         )
     elif _is_irodori_tts():
         _run_tts_irodori(
-            segments_translated, seg_audio_dir, work_dir, progress, ref_cache
+            segments_translated, seg_audio_dir, tts_work_dir, progress, ref_cache
         )
     else:
         _run_tts_omnivoice(
-            segments_translated, seg_audio_dir, work_dir, progress, ref_cache
+            segments_translated, seg_audio_dir, tts_work_dir, progress, ref_cache
         )
 
     force_memory_cleanup()
 
-    tts_meta_path = work_dir / "tts_meta.json"
+    tts_meta_path = tts_work_dir / "tts_meta.json"
     tts_meta = load_tts_meta(tts_meta_path)
 
     # ===== 9. リタイム =====
@@ -465,7 +483,7 @@ def process_one_video(
     )
     print_step(f"   パート数: {len(parts)}")
 
-    retime_dir = work_dir / "retime"
+    retime_dir = tts_work_dir / "retime"
     video_chunk_dir = retime_dir / "video_chunks"
     dubbed_chunk_dir = retime_dir / "dubbed_chunks"
     orig_chunk_dir = retime_dir / "orig_chunks"

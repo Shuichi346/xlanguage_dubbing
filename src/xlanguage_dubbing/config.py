@@ -110,6 +110,13 @@ DEMUCS_DEVICE = _env_choice("DEMUCS_DEVICE", "mps", {"cpu", "mps"})
 TTS_ENGINE = _env("TTS_ENGINE", "omnivoice").strip().lower()
 # "omnivoice", "voxcpm2", or "irodori"
 
+# Design a native target-language reference once per speaker before cloning.
+ENABLE_VOICE_DESIGN = _env_bool("ENABLE_VOICE_DESIGN", False)
+VOICE_DESIGN_SEED = _env_int("VOICE_DESIGN_SEED", 42)
+AGE_GENDER_MODEL_DIR = Path(
+    _env("AGE_GENDER_MODEL_DIR", "./models/age-gender")
+).expanduser()
+
 # =========================
 # whisper.cpp（CLIバイナリ + VAD）
 # =========================

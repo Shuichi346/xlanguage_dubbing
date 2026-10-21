@@ -69,6 +69,7 @@ class SpeakerReferenceCache:
         self._omnivoice_segment_prompt_texts: dict[int, str] = {}
         self._irodori_speaker_ref_latents: dict[str, Path] = {}
         self._irodori_speaker_ref_durations: dict[str, float] = {}
+        self._uses_designed_voices = False
         ensure_dir(cache_dir)
 
     @property
@@ -78,6 +79,10 @@ class SpeakerReferenceCache:
     @property
     def segment_reference_dir(self) -> Path:
         return self._cache_dir / f"{self._tts_engine}_segment_refs"
+
+    @property
+    def uses_designed_voices(self) -> bool:
+        return self._uses_designed_voices
 
     def get_omnivoice_reference_path(self, speaker_id: str) -> Path | None:
         path = self._omnivoice_refs.get(speaker_id)
@@ -108,6 +113,21 @@ class SpeakerReferenceCache:
 
     def get_irodori_speaker_reference_duration(self, speaker_id: str) -> float:
         return self._irodori_speaker_ref_durations.get(speaker_id, 0.0)
+
+    def use_designed_references(
+        self,
+        references: dict[str, Path],
+        text: str,
+        latents: dict[str, Path],
+        durations: dict[str, float],
+    ) -> None:
+        """Use only the designed speaker voice for every subsequent utterance."""
+        self.clear()
+        self._uses_designed_voices = True
+        self._omnivoice_refs.update(references)
+        self._omnivoice_prompt_texts.update(dict.fromkeys(references, text))
+        self._irodori_speaker_ref_latents.update(latents)
+        self._irodori_speaker_ref_durations.update(durations)
 
     def reload_speaker_references(self, speaker_ids: set[str]) -> None:
         for speaker_id in speaker_ids:
@@ -417,6 +437,7 @@ class SpeakerReferenceCache:
         return self._cache_dir / f"{self._tts_engine}_segment_meta.json"
 
     def clear(self):
+        self._uses_designed_voices = False
         self._omnivoice_refs.clear()
         self._omnivoice_prompt_texts.clear()
         self._omnivoice_segment_refs.clear()

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-21
+
+### Added
+
+- Added opt-in `ENABLE_VOICE_DESIGN` for Japanese/English target-language speaker voices with VoxCPM2 and OmniVoice, and Japanese voice design with Irodori-TTS-v4-Small. Each speaker read the fixed reference passage once, and subsequent lines reused the generated voice.
+- Added optional audEERING ONNX age/gender estimation, bounded CPU inference and download socket timeouts, an adult-male uncertainty fallback, and configurable `VOICE_DESIGN_SEED` / `AGE_GENDER_MODEL_DIR` settings.
+- Added atomically published speaker references, per-speaker cache validation and recovery, reusable OmniVoice clone prompts, and generated Irodori latent caches through the codec-only worker.
+- Added separate voice-design output names and engine/language/settings/render namespaces so original voices and prior generated voices did not mix on resume.
+
 ## DATE UNKNOWN
 
 ### Fixed

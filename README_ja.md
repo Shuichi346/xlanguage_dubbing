@@ -253,7 +253,25 @@ NeMo を使う場合は `.env` の `ASR_ENGINE=nemo-speech` を指定します�
 | `voxcpm2` | VoxCPM2 のコントローラブルクローニング動作を使いたい場合。 | セグメントごとの `reference_wav_path` のみを渡します。プロンプト音声／テキストは VoxCPM2 に送信されません。 |
 | `irodori` | Irodori-TTS-Server を通じて日本語クローン TTS を使いたい場合。 | ここでは英日ジョブに推奨。`OUTPUT_LANG=ja` の場合のみ許可され、話者ごとの参照潜在キャッシュをその話者の全セリフで再利用します。 |
 
-Irodori モードは `Aratako/Irodori-TTS-v4-Small` を使用します。TTS サーバー起動前に短命プロセスが DACVAE のみを読み込み、同一話者の短い発話をそれぞれ 48 kHz mono・FP32・deterministic encode・`normalize_db=-16.0` で潜在化します。その潜在列を時系列順に結合し、120秒以下に制限して、`speaker_refs/` 配下に話者ごと1つの `.pt` として atomic にキャッシュします。同じ話者の全セリフに同一パスを `irodori.ref_latent` として送り、`ref_wav` とは併用しません。Sway Sampling（`num_steps=8`、`t_schedule_mode=sway`、`sway_coeff=-1.0`）は維持し、Caption・Style Prompt・固定 `seconds` は送信しません。
+Irodori モードは `Aratako/Irodori-TTS-v4-Small` を使用します。TTS サーバー起動前に短命プロセスが DACVAE のみを読み込み、同一話者の短い発話をそれぞれ 48 kHz mono・FP32・deterministic encode・`normalize_db=-16.0` で潜在化します。その潜在列を時系列順に結合し、120秒以下に制限して、`speaker_refs/` 配下に話者ごと1つの `.pt` として atomic にキャッシュします。同じ話者の全セリフに同一パスを `irodori.ref_latent` として送り、`ref_wav` とは併用しません。Sway Sampling（`num_steps=8`、`t_schedule_mode=sway`、`sway_coeff=-1.0`）を維持します。クローン合成時はCaption・Style Prompt・固定 `seconds` を送信しません。下記のボイスデザインを有効にした場合だけ、初回の参照音声生成にCaptionを使用します。
+
+### ボイスデザインしてからクローンする
+
+`.env` の `ENABLE_VOICE_DESIGN=true` で有効になります。話者ごとに翻訳先言語の声を1つ生成し、その声を全セリフで再利用します。4話者なら参照音声も4つ作ります。言語をまたぐクローンで元言語のアクセントが残る問題を抑えるための機能です。発音の品質はTTSモデルにも依存します。初期設定は従来の元音声クローンです。
+
+```dotenv
+ENABLE_VOICE_DESIGN=true
+OUTPUT_LANG=ja
+TTS_ENGINE=voxcpm2
+VOICE_DESIGN_SEED=42
+AGE_GENDER_MODEL_DIR=./models/age-gender
+```
+
+年齢・性別の自動推定には `uv sync --extra voice-design --inexact` で追加依存を導入します。初回に[audEERINGの6層ONNXモデル](https://github.com/audeering/w2v2-age-gender-how-to)を取得し、CPUで男女・青年／中年を推定します。互換性のある24層ONNXモデルを `AGE_GENDER_MODEL_DIR` に配置することもできます。不明、低信頼、子供判定、モデル未導入、音声不正の場合は大人の男性を使います。この推定モデルのライセンスは **CC BY-NC-SA 4.0** で、商用利用には提供元の商用ライセンスが必要です。
+
+VoxCPM2は声の説明文、Irodoriは初回だけCaptionを使用します。OmniVoiceは男女・青年／中年・普通の声高を属性から選択します。翻訳先は日本語・英語に限定され、Irodori v4 Smallは日本語のみ対応します。ご指定の天気・駅前・青い屋根の文章を翻訳先言語で読み上げ、その生成音声またはIrodori参照潜在を以後のクローンに使います。モデルの重みを追加学習する方式ではありません。
+
+生成声と途中結果は、音声モードごとの `voice_design/<engine>_<language>_<settings>/` 以下に保存します。出力動画にも `_voice_design_...` が付くため、従来方式の完成動画があっても実行できます。有効な生成声は再開時に再利用されます。推定モデル追加前に作った男性の代替音声も維持するので、声を作り直す場合は `VOICE_DESIGN_SEED` を変更してください。破損した参照音声だけを再生成し、参照音声の指紋でTTS・リタイム結果を分けます。Irodoriでは短命のコーデック処理の前に、このパイプライン自身が起動したサーバーだけを停止します。外部で管理するサーバーは停止しません。
 
 ### 翻訳
 

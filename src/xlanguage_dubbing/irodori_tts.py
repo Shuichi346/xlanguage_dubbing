@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""
-Irodori-TTS-Server による日本語ボイスクローン TTS。
+"""Japanese TTS through the Irodori server's speech API.
 
-サーバーは OpenAI 互換の /v1/audio/speech API を提供する。
-このクライアントは caption/style prompt と seconds を送らず、
-話者ごとのキャッシュ済み参照潜在を irodori.ref_latent として渡す。
+Cloning uses each speaker's cached latent without caption or fixed seconds.
+Initial voice design uses caption alone to create a reusable native reference.
 """
 
 from __future__ import annotations
@@ -149,6 +147,11 @@ def _stop_spawned_server() -> None:
 atexit.register(_stop_spawned_server)
 
 
+def release_irodori_tts_server() -> None:
+    """Stop only the server owned by this pipeline before reference encoding."""
+    _stop_spawned_server()
+
+
 def ensure_irodori_tts_server() -> None:
     """Irodori-TTS-Server を利用可能な状態にする。"""
     global _SERVER_PROCESS, _SERVER_LOG_FILE, _SERVER_READY
@@ -244,6 +247,39 @@ def irodori_tts_synthesize(
             "sway_coeff": IRODORI_TTS_SWAY_COEFF,
         },
     }
+    _request_speech(payload, out_audio)
+
+
+def irodori_design_voice(
+    text: str, out_wav: Path, prompt: str, seed: int, language: str,
+) -> None:
+    """Create the initial Japanese voice; later cloning uses its latent only."""
+    if language != "ja":
+        raise PipelineError("Irodori-TTS-v4-Small のボイスデザインは日本語のみ対応しています。")
+    if not prompt.strip() or not text.strip():
+        raise PipelineError("ボイスデザインのプロンプトと読み上げ文章が必要です。")
+    ensure_dir(out_wav.parent)
+    ensure_irodori_tts_server()
+    _request_speech({
+        "model": IRODORI_TTS_MODEL,
+        "input": text,
+        "response_format": "wav",
+        "speed": IRODORI_TTS_SPEED,
+        "irodori": {
+            "caption": prompt,
+            "no_ref": True,
+            "seed": seed,
+            "num_steps": IRODORI_TTS_NUM_STEPS,
+            "t_schedule_mode": IRODORI_TTS_T_SCHEDULE_MODE,
+            "sway_coeff": IRODORI_TTS_SWAY_COEFF,
+            # A single sample avoids independent chunk voices in the reference.
+            "chunking_enabled": False,
+        },
+    }, out_wav)
+
+
+def _request_speech(payload: dict, out_audio: Path) -> None:
+    """Write an audio response from the shared speech endpoint."""
     body = json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "audio/*",

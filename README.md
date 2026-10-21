@@ -251,7 +251,25 @@ If NeMo is already installed, no installation is needed. Otherwise, follow the [
 | `voxcpm2` | You want VoxCPM2 Controllable Cloning behavior. | Passes per-segment `reference_wav_path` only; prompt audio/text is not sent to VoxCPM2. |
 | `irodori` | You want Japanese cloned TTS through Irodori-TTS-Server. | Recommended here for English-to-Japanese jobs, only allowed with `OUTPUT_LANG=ja`, and reuses one cached reference latent per speaker for every utterance. |
 
-Irodori mode uses `Aratako/Irodori-TTS-v4-Small`. Before the TTS server starts, a short-lived process in the Irodori-TTS-Server environment loads only the DACVAE codec. It encodes each selected short utterance separately as 48 kHz mono FP32 with deterministic encoding and `normalize_db=-16.0`, concatenates the latents in chronological order, and caps the combined reference at 120 seconds. The validated tensor is atomically cached as one `.pt` file per speaker under `speaker_refs/`; reruns reuse it unless the source audio, selected ranges, or codec settings changed. Every utterance for that speaker sends the same path as `irodori.ref_latent`, never together with `ref_wav`. Irodori also sends its faster Sway Sampling options by default (`num_steps=8`, `t_schedule_mode=sway`, `sway_coeff=-1.0`). It intentionally does not send Caption, Style Prompt, or fixed `seconds`; the server duration predictor is used.
+Irodori mode uses `Aratako/Irodori-TTS-v4-Small`. Before the TTS server starts, a short-lived process in the Irodori-TTS-Server environment loads only the DACVAE codec. It encodes each selected short utterance separately as 48 kHz mono FP32 with deterministic encoding and `normalize_db=-16.0`, concatenates the latents in chronological order, and caps the combined reference at 120 seconds. The validated tensor is atomically cached as one `.pt` file per speaker under `speaker_refs/`; reruns reuse it unless the source audio, selected ranges, or codec settings changed. Every utterance for that speaker sends the same path as `irodori.ref_latent`, never together with `ref_wav`. Irodori also sends its faster Sway Sampling options by default (`num_steps=8`, `t_schedule_mode=sway`, `sway_coeff=-1.0`). Cloning requests omit Caption, Style Prompt, and fixed `seconds`; the server duration predictor is used. The optional voice-design stage described below uses Caption only for its initial reference generation.
+
+### Voice design before cloning
+
+Set `ENABLE_VOICE_DESIGN=true` in `.env` to generate a voice in the target language for each detected speaker, then reuse that speaker's voice for every translated line. Four speakers produce four separate reference samples. This mode aims to reduce source-language accents in cross-language cloning; pronunciation quality still depends on the TTS model. The default remains original-voice cloning.
+
+```dotenv
+ENABLE_VOICE_DESIGN=true
+OUTPUT_LANG=ja
+TTS_ENGINE=voxcpm2
+VOICE_DESIGN_SEED=42
+AGE_GENDER_MODEL_DIR=./models/age-gender
+```
+
+Install the optional age/gender estimator with `uv sync --extra voice-design --inexact`. It downloads the [audEERING six-layer ONNX model](https://github.com/audeering/w2v2-age-gender-how-to) on first use and runs on CPU; a compatible 24-layer ONNX export can be supplied in `AGE_GENDER_MODEL_DIR`. The estimator chooses male/female and young adult/middle-aged. Unknown, low-confidence, child, unavailable-model, and invalid-audio results use an adult male voice. The audEERING model is licensed **CC BY-NC-SA 4.0**; commercial use requires the provider's commercial license.
+
+VoxCPM2 uses a voice-description prefix, and Irodori uses Caption only to generate the initial reference. OmniVoice selects supported gender/age attributes with moderate pitch. Japanese and English are supported with VoxCPM2/OmniVoice; Irodori v4 Small remains Japanese-only. Each sample reads the fixed weather/station/blue-roof passage in the target language. Subsequent cloning uses only the generated reference audio or its cached Irodori latent; model weights are not fine-tuned.
+
+Designed voices are saved under the audio mode's `voice_design/<engine>_<language>_<settings>/speaker_refs/` directory. Source text recognition and translation are isolated there too. Outputs include a `_voice_design_...` marker, so completed original-voice outputs do not prevent this mode from running. Valid voices persist across restarts, including fallback male voices after estimator installation; change `VOICE_DESIGN_SEED` to create a new voice set. Corrupt references are rebuilt individually, and rendering uses reference fingerprints to avoid mixing previous voices. For Irodori, only a server started by this pipeline is stopped before the short-lived codec worker; externally managed servers remain under their owner's control.
 
 ### Translation
 

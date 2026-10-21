@@ -15,6 +15,7 @@ from xlanguage_dubbing.config import (
     DEMUCS_DEVICE,
     DEMUCS_MODEL,
     ENABLE_AUDIO_SEPARATION,
+    ENABLE_VOICE_DESIGN,
     INPUT_LANG,
     IRODORI_TTS_BASE_URL,
     IRODORI_TTS_DIR,
@@ -99,6 +100,10 @@ def preflight_checks() -> None:
     which_or_raise("ffmpeg")
     which_or_raise("ffprobe")
     ensure_dir(TEMP_ROOT)
+    if ENABLE_VOICE_DESIGN:
+        from xlanguage_dubbing.tts.voice_design import validate_voice_design
+        validate_voice_design(TTS_ENGINE, OUTPUT_LANG)
+        print_step("  ボイスデザイン: 有効（話者別の生成声を再利用）")
 
     asr_engine = get_asr_engine()
     print_step(f"  ASR エンジン: {asr_engine}")
@@ -232,6 +237,9 @@ def _work_dir_for_video(video_path: Path) -> Path:
         work_dir = TEMP_ROOT / f"{video_path.stem}_rawaudio"
     if get_asr_engine() == "nemo-speech":
         work_dir /= "nemo-speech"
+    if ENABLE_VOICE_DESIGN:
+        from xlanguage_dubbing.tts.voice_design import design_namespace
+        work_dir = work_dir / "voice_design" / design_namespace()
     return work_dir
 
 
