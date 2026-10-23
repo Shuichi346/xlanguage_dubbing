@@ -192,8 +192,7 @@ def ensure_irodori_tts_server() -> None:
         raise PipelineError(
             "Irodori-TTS-Server のディレクトリが見つかりません。\n"
             f"  IRODORI_TTS_DIR={IRODORI_TTS_DIR}\n"
-            "  例: git clone https://github.com/Aratako/Irodori-TTS-Server.git "
-            "Irodori-TTS-Server && cd Irodori-TTS-Server && uv sync --extra cpu"
+            f"  例: bash scripts/setup_irodori.sh {shlex.quote(str(IRODORI_TTS_DIR))}"
         )
 
     cmd = _select_start_command()

@@ -239,7 +239,7 @@ IRODORI_TTS_BASE_URL = _env(
     "IRODORI_TTS_BASE_URL", f"http://localhost:{IRODORI_TTS_SERVER_PORT}"
 ).strip().rstrip("/")
 IRODORI_TTS_DIR = Path(
-    _env("IRODORI_TTS_DIR", "./Irodori-TTS-Server")
+    _env("IRODORI_TTS_DIR", "./Irodori-TTS-Server-nonWatermark")
 ).expanduser()
 IRODORI_TTS_AUTO_START = _env_bool("IRODORI_TTS_AUTO_START", True)
 IRODORI_TTS_START_COMMAND = _env("IRODORI_TTS_START_COMMAND", "").strip()

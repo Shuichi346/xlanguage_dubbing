@@ -121,17 +121,19 @@ chmod +x scripts/setup_whisper.sh
 
 このスクリプトは `whisper.cpp` をクローンまたは更新し、`whisper-cli` をビルドし、設定された Whisper および VAD モデルをダウンロードします。
 
-Irodori TTS を使う場合は、設定されたパスにサーバーのチェックアウトをクローンし、CPU エクストラを同期してください：
+Irodori TTS を使う場合は、新規・既存環境ともに、このリポジトリのルートでセットアップ用スクリプトを実行してください：
 
 ```bash
-git clone https://github.com/Aratako/Irodori-TTS-Server.git
-cd Irodori-TTS-Server
-uv sync --extra cpu --upgrade-package irodori-tts --inexact
+bash scripts/setup_irodori.sh
 ```
 
-既存環境でも同じ更新コマンドで、推論ライブラリを MeanFlow 対応版へ更新してください。モデル名の変更だけでは移行できません。[Irodori の移行設定](#irodori-meanflow)と[動作確認済み環境](NOTES.md#2026-10-23)も参照してください。
+このスクリプトは [Shuichi346/Irodori-TTS-Server-nonWatermark](https://github.com/Shuichi346/Irodori-TTS-Server-nonWatermark) をクローンし、コミット `ee9fd035cb65223927eb4058d89cb76708756732` に固定します。サーバーに同梱されたロックファイルを `uv sync --locked --extra cpu --inexact` でインストールし、推論ライブラリにも [Irodori-TTS-nonWatermark](https://github.com/Shuichi346/Irodori-TTS-nonWatermark) のコミット `0e984c21294ab699476c4b78e2f117b07a485163` を使用します。サーバー・推論ライブラリともに nonWatermark フォークです。SilentCipher の初期化・ウォーターマーク埋め込み・関連依存パッケージを削除しています。サーバー API と MeanFlow のモデルは変わりません。処理速度の改善量は未測定です。
 
-デフォルトの `IRODORI_TTS_DIR=./Irodori-TTS-Server` は、このリポジトリルート内にそのチェックアウトがあることを想定しています。`TTS_ENGINE=irodori` では、まずその環境の短命プロセスで未生成の話者参照潜在キャッシュを作成します。`IRODORI_TTS_AUTO_START=true` の場合は、その後に長時間動作するサーバーを自動起動します。
+従来の `./Irodori-TTS-Server` は残します。セットアップ先が別リポジトリの既存チェックアウトだった場合、スクリプトは origin を変更せず終了します。新しいデフォルトの場所、またはサーバーフォークを別途クローンした場所を使用してください。変更のないフォークのチェックアウトは、固定したサーバーコミットに更新します。
+
+サーバーの場所を変更している場合は、`bash scripts/setup_irodori.sh /absolute/path/Irodori-TTS-Server-nonWatermark` のように、`IRODORI_TTS_DIR` と同じパスを第1引数に指定してください。シェルでエクスポートした `IRODORI_TTS_DIR` も使えますが、このスクリプトは `.env` を読み込みません。モデル名を変えるだけでは推論ライブラリは更新されません。[Irodori の移行設定](#irodori-meanflow)と[実行環境の詳細](NOTES.md#2026-10-23)も参照してください。
+
+デフォルトの `IRODORI_TTS_DIR=./Irodori-TTS-Server-nonWatermark` は、このリポジトリルート内にそのチェックアウトがあることを想定しています。`TTS_ENGINE=irodori` では、まずその環境の短命プロセスで未生成の話者参照潜在キャッシュを作成します。`IRODORI_TTS_AUTO_START=true` の場合は、その後に長時間動作するサーバーを自動起動します。
 
 ## 使い方
 
@@ -216,7 +218,7 @@ uv run xlanguage-dubbing --generate-script
 | `OMNIVOICE_*` | OmniVoice のモデル・dtype・サンプリング・長さ・参照・リトライ設定。 |
 | `VOXCPM2_*` | VoxCPM2 のモデル・コントローラブルクローニング・長さ・参照・リトライ設定。 |
 | `IRODORI_TTS_BASE_URL` | Irodori-TTS-Server のベース URL。 |
-| `IRODORI_TTS_DIR` | ローカルの Irodori-TTS-Server チェックアウト。 |
+| `IRODORI_TTS_DIR` | ローカルのサーバーフォーク。デフォルトは `./Irodori-TTS-Server-nonWatermark`。 |
 | `IRODORI_TTS_AUTO_START` | サーバーが正常稼働していない場合に Irodori-TTS-Server を自動起動します。 |
 | `IRODORI_TTS_START_COMMAND` | オプションのカスタムサーバー起動コマンド。 |
 | `IRODORI_TTS_API_KEY` | Irodori-TTS-Server に送信するオプションの API キー。 |
@@ -259,6 +261,7 @@ Irodori は [Aratako/Irodori-TTS-v4.1-Small-MF](https://huggingface.co/Aratako/I
 
 ```dotenv
 TTS_ENGINE=irodori
+IRODORI_TTS_DIR=./Irodori-TTS-Server-nonWatermark
 OUTPUT_LANG=ja
 IRODORI_HF_CHECKPOINT=Aratako/Irodori-TTS-v4.1-Small-MF
 IRODORI_TTS_NUM_STEPS=4
@@ -341,7 +344,7 @@ Irodori のモデルやステップ数を変更すると出力名も変わるた
 
 NeMo のチェックポイントと参照音声は、選択した音声モードのディレクトリ内の `nemo-speech/` に保存します。他の ASR エンジンの結果を誤って再利用しません。検証済みの CLI 出力は、このディレクトリの `nemo_speech.json` に保存します。
 
-Irodori の元音声クローンでは、ASR・翻訳の保存先を維持し、`seg_audio/`・`tts_meta.json`・`retime/` を `render/<指紋>/` 以下に分けます。指紋には有効な生成設定・参照潜在の内容・翻訳済みセグメントを含めます。ボイスデザインでは音声／ASR ディレクトリの下に `voice_design/<エンジン>_<言語>_<設定ハッシュ>/` を追加し、生成声をその `speaker_refs/`、描画結果をその `render/<指紋>/` に保存します。旧モデルの共有 TTS・リタイムキャッシュは残りますが、移行後の Irodori では再利用しません。
+Irodori の元音声クローンでは、ASR・翻訳の保存先を維持し、`seg_audio/`・`tts_meta.json`・`retime/` を `render/<指紋>/` 以下に分けます。指紋には有効な生成設定・参照潜在の内容・翻訳済みセグメントを含めます。ボイスデザインでは音声／ASR ディレクトリの下に `voice_design/<エンジン>_<言語>_<設定ハッシュ>/` を追加し、生成声をその `speaker_refs/`、描画結果をその `render/<指紋>/` に保存します。Irodori の設定指紋にはサーバーの `uv.lock` ハッシュも含まれるため、固定した推論フォークを導入すると、生成声・描画キャッシュ・出力名が分かれます。旧モデルの共有 TTS・リタイムキャッシュは残りますが、移行後の Irodori では再利用しません。
 
 `progress.json` がソース動画のサイズおよび更新日時と一致する場合、コマンドを再実行すると完了済みの作業が再開されます。特定の動画を最初からやり直したい場合は、その動画の一時ディレクトリと既存の最終出力ファイルを削除してください。
 
@@ -383,14 +386,13 @@ uv run python -m spacy download en_core_web_sm
 
 ### Irodori-TTS-Server が起動中に終了する
 
-`IRODORI_TTS_DIR` に設定したサーバーのディレクトリで、CPU 環境と推論ライブラリを更新してください：
+プロジェクト直下で、固定したサーバーフォークと、そのロックファイルに従う CPU 環境をインストールしてください：
 
 ```bash
-cd Irodori-TTS-Server
-uv sync --extra cpu --upgrade-package irodori-tts --inexact
+bash scripts/setup_irodori.sh
 ```
 
-その後プロジェクト直下に戻り、[生成した起動スクリプト](#irodori-meanflow)を使ってください。パイプラインのチェックポイント・ステップ数・デバイス設定がサーバーへ渡されます。これらの環境変数を設定せずサーバーモジュールを直接起動すると、サーバー独自のデフォルト値が使われます。
+`IRODORI_TTS_DIR` がデフォルトと異なる場合は、サーバーのパスを第1引数に指定してください（[インストール](#インストール)参照）。続けて[生成した起動スクリプト](#irodori-meanflow)を使ってください。パイプラインのチェックポイント・ステップ数・デバイス設定がサーバーへ渡されます。これらの環境変数を設定せずサーバーモジュールを直接起動すると、サーバー独自のデフォルト値が使われます。
 
 それでも起動に失敗する場合は、以下を確認してください：
 

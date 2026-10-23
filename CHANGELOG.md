@@ -7,8 +7,14 @@
 - Prevented original-voice Irodori jobs from reusing older model audio, retimed tracks, or final videos by separating render caches and output filenames with synthesis-setting fingerprints.
 - Rejected an already running Irodori server reporting a different checkpoint and prevented server-local checkpoint overrides during pipeline-managed startup.
 
+### Added
+
+- Added `scripts/setup_irodori.sh` to install the pinned nonWatermark server fork and its locked inference dependency, while preserving existing official-server checkouts and local edits.
+
 ### Changed
 
+- Switched both the server and inference library to the user's nonWatermark forks, removing SilentCipher loading and embedding from newly generated speech while preserving MF and latent-based cloning. Pinned the server to `ee9fd035cb65223927eb4058d89cb76708756732` and consumed its locked inference commit `0e984c21294ab699476c4b78e2f117b07a485163`.
+- Changed the active and default `IRODORI_TTS_DIR` to `./Irodori-TTS-Server-nonWatermark`, created its separate environment, and regenerated the startup script for that checkout.
 - Migrated the default Irodori checkpoint to `Aratako/Irodori-TTS-v4.1-Small-MF` with four MeanFlow steps for both voice design and latent-based cloning, and omitted RF-only Sway/CFG request controls for that checkpoint.
 - Updated the local server's inference library for MeanFlow support, regenerated the launch script, and documented the dependency upgrade for existing installations. Explicit RF checkpoints retained their configurable sampling controls.
 

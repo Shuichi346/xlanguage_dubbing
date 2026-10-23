@@ -121,17 +121,19 @@ chmod +x scripts/setup_whisper.sh
 
 The script clones or updates `whisper.cpp`, builds `whisper-cli`, and downloads the configured Whisper and VAD models.
 
-For Irodori TTS, clone the server checkout at the configured path and sync the CPU extra:
+For Irodori TTS, run the setup helper from this repository root, for both new and existing server installations:
 
 ```bash
-git clone https://github.com/Aratako/Irodori-TTS-Server.git
-cd Irodori-TTS-Server
-uv sync --extra cpu --upgrade-package irodori-tts --inexact
+bash scripts/setup_irodori.sh
 ```
 
-Existing server installations need the same upgrade command to update the inference library for MeanFlow. Updating the checkpoint name alone is insufficient. See the [Irodori migration settings](#irodori-meanflow) and [verified runtime details](NOTES.md#2026-10-23).
+The helper clones [Shuichi346/Irodori-TTS-Server-nonWatermark](https://github.com/Shuichi346/Irodori-TTS-Server-nonWatermark), pinned to commit `ee9fd035cb65223927eb4058d89cb76708756732`. It installs the server's committed lockfile with `uv sync --locked --extra cpu --inexact`; that lockfile pins the [Irodori-TTS-nonWatermark inference package](https://github.com/Shuichi346/Irodori-TTS-nonWatermark) to commit `0e984c21294ab699476c4b78e2f117b07a485163`. Both the server and inference package use the nonWatermark forks. SilentCipher initialization, watermark embedding, and their dependencies are removed. The server API and MeanFlow checkpoint remain unchanged; no speedup has been measured here.
 
-The default `IRODORI_TTS_DIR=./Irodori-TTS-Server` expects that checkout inside this repository root. When `TTS_ENGINE=irodori`, the pipeline first uses that server environment in a short-lived process to build missing speaker-reference latent caches. With `IRODORI_TTS_AUTO_START=true`, it then starts the long-running server automatically.
+The old `./Irodori-TTS-Server` checkout is preserved. The helper rejects an existing checkout from another repository rather than changing its origin. Use the new default directory or a separate clone of the server fork; clean fork checkouts are updated to the pinned server commit.
+
+For a custom server location, pass the same path used by `IRODORI_TTS_DIR` as the helper's first argument, for example `bash scripts/setup_irodori.sh /absolute/path/Irodori-TTS-Server-nonWatermark`. The helper also accepts an exported `IRODORI_TTS_DIR`; it does not load `.env`. Updating the checkpoint name alone does not update the inference package. See the [Irodori migration settings](#irodori-meanflow) and [runtime details](NOTES.md#2026-10-23).
+
+The default `IRODORI_TTS_DIR=./Irodori-TTS-Server-nonWatermark` expects that checkout inside this repository root. When `TTS_ENGINE=irodori`, the pipeline first uses that server environment in a short-lived process to build missing speaker-reference latent caches. With `IRODORI_TTS_AUTO_START=true`, it then starts the long-running server automatically.
 
 ## Usage
 
@@ -216,7 +218,7 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 | `OMNIVOICE_*` | OmniVoice model, dtype, sampling, duration, reference, and retry settings. |
 | `VOXCPM2_*` | VoxCPM2 model, controllable cloning, duration, reference, and retry settings. |
 | `IRODORI_TTS_BASE_URL` | Irodori-TTS-Server base URL. |
-| `IRODORI_TTS_DIR` | Local Irodori-TTS-Server checkout. |
+| `IRODORI_TTS_DIR` | Local server-fork checkout, default `./Irodori-TTS-Server-nonWatermark`. |
 | `IRODORI_TTS_AUTO_START` | Start Irodori-TTS-Server automatically when it is not already healthy. |
 | `IRODORI_TTS_START_COMMAND` | Optional custom server start command. |
 | `IRODORI_TTS_API_KEY` | Optional API key sent to Irodori-TTS-Server. |
@@ -259,6 +261,7 @@ Irodori uses [Aratako/Irodori-TTS-v4.1-Small-MF](https://huggingface.co/Aratako/
 
 ```dotenv
 TTS_ENGINE=irodori
+IRODORI_TTS_DIR=./Irodori-TTS-Server-nonWatermark
 OUTPUT_LANG=ja
 IRODORI_HF_CHECKPOINT=Aratako/Irodori-TTS-v4.1-Small-MF
 IRODORI_TTS_NUM_STEPS=4
@@ -341,7 +344,7 @@ Temporary directories are isolated by audio source mode:
 
 NeMo stores its checkpoints and references in a `nemo-speech/` subdirectory of the selected audio-mode directory, so selecting NeMo does not reuse VibeVoice/Whisper outputs. The validated CLI output is saved as `nemo_speech.json` there.
 
-For Irodori original-voice jobs, ASR and translation remain in the audio/ASR work directory; `seg_audio/`, `tts_meta.json`, and `retime/` live under `render/<fingerprint>/`. The fingerprint includes effective synthesis settings, reference-latent contents, and translated segments. Voice-design jobs add `voice_design/<engine>_<language>_<settings-hash>/` below the audio/ASR directory, store generated samples in its `speaker_refs/`, and render under its own `render/<fingerprint>/` directory. Old shared TTS and retime artifacts are preserved and are not reused by the migrated Irodori run.
+For Irodori original-voice jobs, ASR and translation remain in the audio/ASR work directory; `seg_audio/`, `tts_meta.json`, and `retime/` live under `render/<fingerprint>/`. The fingerprint includes effective synthesis settings, reference-latent contents, and translated segments. Voice-design jobs add `voice_design/<engine>_<language>_<settings-hash>/` below the audio/ASR directory, store generated samples in its `speaker_refs/`, and render under its own `render/<fingerprint>/` directory. The server's `uv.lock` hash also participates in the Irodori settings fingerprint, so installing the pinned inference fork selects separate voice and render caches and output names. Old shared TTS and retime artifacts are preserved and are not reused by the migrated Irodori run.
 
 Rerunning the command resumes completed work when `progress.json` matches the source video's size and modification time. To force a full rerun for one video, remove that video's temporary directory and any existing final output file.
 
@@ -383,14 +386,13 @@ Set `HF_AUTH_TOKEN` in `.env` before using `ASR_ENGINE=whisper`. VibeVoice and N
 
 ### Irodori-TTS-Server exits during startup
 
-Use the local checkout expected by `IRODORI_TTS_DIR`, then update the CPU environment and inference library:
+From the project root, install the pinned server fork and its locked CPU environment:
 
 ```bash
-cd Irodori-TTS-Server
-uv sync --extra cpu --upgrade-package irodori-tts --inexact
+bash scripts/setup_irodori.sh
 ```
 
-Then return to the project root and use the [generated helper script](#irodori-meanflow) so the server receives the pipeline's checkpoint, step count, and device settings. Running the server module directly without these exports uses the server's own defaults.
+Pass your custom server path as the first argument if `IRODORI_TTS_DIR` differs from the default (see [Installation](#installation)). Then use the [generated startup script](#irodori-meanflow) so the server receives the pipeline's checkpoint, step count, and device settings. Running the server module directly without these exports uses the server's own defaults.
 
 If startup still fails, inspect:
 

@@ -47,11 +47,8 @@ set -euo pipefail
 
 # === xlanguage-dubbing Irodori-TTS-Server 起動スクリプト ===
 # Setup:
-#   git clone https://github.com/Aratako/Irodori-TTS-Server.git
-#   cd Irodori-TTS-Server
-#   uv sync --extra cpu
-# Existing installations need the MeanFlow-capable inference library:
-#   uv sync --extra cpu --upgrade-package irodori-tts --inexact
+#   bash scripts/setup_irodori.sh {shlex.quote(str(IRODORI_TTS_DIR))}
+# The helper pins the nonWatermark server fork and its locked inference library.
 
 export IRODORI_MODEL_DEVICE={shlex.quote(IRODORI_MODEL_DEVICE)}
 export IRODORI_CODEC_DEVICE={shlex.quote(IRODORI_CODEC_DEVICE)}
