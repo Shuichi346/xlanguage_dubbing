@@ -126,8 +126,10 @@ Irodori TTS を使う場合は、設定されたパスにサーバーのチェ�
 ```bash
 git clone https://github.com/Aratako/Irodori-TTS-Server.git
 cd Irodori-TTS-Server
-uv sync --extra cpu
+uv sync --extra cpu --upgrade-package irodori-tts --inexact
 ```
+
+既存環境でも同じ更新コマンドで、推論ライブラリを MeanFlow 対応版へ更新してください。モデル名の変更だけでは移行できません。[Irodori の移行設定](#irodori-meanflow)と[動作確認済み環境](NOTES.md#2026-10-23)も参照してください。
 
 デフォルトの `IRODORI_TTS_DIR=./Irodori-TTS-Server` は、このリポジトリルート内にそのチェックアウトがあることを想定しています。`TTS_ENGINE=irodori` では、まずその環境の短命プロセスで未生成の話者参照潜在キャッシュを作成します。`IRODORI_TTS_AUTO_START=true` の場合は、その後に長時間動作するサーバーを自動起動します。
 
@@ -218,17 +220,15 @@ uv run xlanguage-dubbing --generate-script
 | `IRODORI_TTS_AUTO_START` | サーバーが正常稼働していない場合に Irodori-TTS-Server を自動起動します。 |
 | `IRODORI_TTS_START_COMMAND` | オプションのカスタムサーバー起動コマンド。 |
 | `IRODORI_TTS_API_KEY` | Irodori-TTS-Server に送信するオプションの API キー。 |
-| `IRODORI_HF_CHECKPOINT` | Irodori-TTS-Server が使う Hugging Face チェックポイント。デフォルトは `Aratako/Irodori-TTS-v4-Small`。 |
+| `IRODORI_HF_CHECKPOINT` | Irodori-TTS-Server が使う Hugging Face チェックポイント。デフォルトは `Aratako/Irodori-TTS-v4.1-Small-MF`。 |
 | `IRODORI_CODEC_REPO` | Irodori 参照潜在の生成とサーバーのデコードに使う DACVAE。デフォルトは `Aratako/Semantic-DACVAE-Japanese-32dim`。 |
-| `IRODORI_MODEL_DEVICE` | Irodori モデルの実行デバイス。デフォルトは `cpu`。Pytorchのバグにより`mps`はメモリー増加で処理負荷注意。
- |
-| `IRODORI_CODEC_DEVICE` | Irodori コーデックの実行デバイス。デフォルトは `cpu`。Pytorchのバグにより`mps`はメモリー増加で処理負荷注意。
- |
+| `IRODORI_MODEL_DEVICE` | Irodori モデルの実行デバイス。デフォルトは `cpu`。Pytorchのバグにより`mps`はメモリー増加で処理負荷注意。 |
+| `IRODORI_CODEC_DEVICE` | Irodori コーデックの実行デバイス。デフォルトは `cpu`。Pytorchのバグにより`mps`はメモリー増加で処理負荷注意。 |
 | `IRODORI_TTS_RESPONSE_FORMAT` | 音声レスポンス形式、デフォルトは `wav`。 |
 | `IRODORI_TTS_SPEED` | Irodori 音声 API に送信するスピード値。 |
-| `IRODORI_TTS_NUM_STEPS` | Irodori の diffusion step 数。Sway Sampling 用にデフォルトは `8`。 |
-| `IRODORI_TTS_T_SCHEDULE_MODE` | Irodori のサンプリングスケジュール。デフォルトは `sway`。 |
-| `IRODORI_TTS_SWAY_COEFF` | Irodori の Sway Sampling 係数。デフォルトは `-1.0`。 |
+| `IRODORI_TTS_NUM_STEPS` | Irodori の生成ステップ数。MeanFlow 用にデフォルトは `4`。 |
+| `IRODORI_TTS_T_SCHEDULE_MODE` | 従来 RF 専用のスケジュール。デフォルトは `linear`。MeanFlow では送信しません。 |
+| `IRODORI_TTS_SWAY_COEFF` | 従来 RF 専用の Sway 係数。デフォルトは `-1.0`。MeanFlow では送信しません。 |
 | `IRODORI_REFERENCE_MAX_SEC` | Irodori で話者ごとに連結する参照音声の上限。モデル上限の120秒以下に制限されます。 |
 
 ## エンジンについて
@@ -253,7 +253,30 @@ NeMo を使う場合は `.env` の `ASR_ENGINE=nemo-speech` を指定します�
 | `voxcpm2` | VoxCPM2 のコントローラブルクローニング動作を使いたい場合。 | セグメントごとの `reference_wav_path` のみを渡します。プロンプト音声／テキストは VoxCPM2 に送信されません。 |
 | `irodori` | Irodori-TTS-Server を通じて日本語クローン TTS を使いたい場合。 | ここでは英日ジョブに推奨。`OUTPUT_LANG=ja` の場合のみ許可され、話者ごとの参照潜在キャッシュをその話者の全セリフで再利用します。 |
 
-Irodori モードは `Aratako/Irodori-TTS-v4-Small` を使用します。TTS サーバー起動前に短命プロセスが DACVAE のみを読み込み、同一話者の短い発話をそれぞれ 48 kHz mono・FP32・deterministic encode・`normalize_db=-16.0` で潜在化します。その潜在列を時系列順に結合し、120秒以下に制限して、`speaker_refs/` 配下に話者ごと1つの `.pt` として atomic にキャッシュします。同じ話者の全セリフに同一パスを `irodori.ref_latent` として送り、`ref_wav` とは併用しません。Sway Sampling（`num_steps=8`、`t_schedule_mode=sway`、`sway_coeff=-1.0`）を維持します。クローン合成時はCaption・Style Prompt・固定 `seconds` を送信しません。下記のボイスデザインを有効にした場合だけ、初回の参照音声生成にCaptionを使用します。
+### Irodori MeanFlow
+
+Irodori は [Aratako/Irodori-TTS-v4.1-Small-MF](https://huggingface.co/Aratako/Irodori-TTS-v4.1-Small-MF) を使用し、元音声クローン・初回ボイスデザインともに4ステップで生成します。既存環境では[インストール](#インストール)のコマンドでサーバー内の推論ライブラリを更新し、既存の `.env` の以下の項目を書き換えてください。
+
+```dotenv
+TTS_ENGINE=irodori
+OUTPUT_LANG=ja
+IRODORI_HF_CHECKPOINT=Aratako/Irodori-TTS-v4.1-Small-MF
+IRODORI_TTS_NUM_STEPS=4
+```
+
+既存の `.env` は新しいデフォルト値より優先されます。`IRODORI_TTS_NUM_STEPS=8` を残すと8ステップのままです。MeanFlow では `IRODORI_TTS_T_SCHEDULE_MODE`・`IRODORI_TTS_SWAY_COEFF`・CFG の上書き設定を送信しません。Sway 設定は従来の RF チェックポイントを明示的に選んだ場合に使用できます。対応する制御項目は[公式 MeanFlow ガイド](https://github.com/Aratako/Irodori-TTS/blob/main/docs/meanflow.md)を参照してください。
+
+`.env` の変更後、プロジェクト直下で起動スクリプトを再生成します。
+
+```bash
+uv run --no-sync xlanguage-dubbing --generate-script
+```
+
+手動で起動した旧サーバーがある場合は、次の実行前に停止してください。既定の `IRODORI_TTS_AUTO_START=true` なら、必要な時点でパイプラインが設定済みサーバーを起動します。手動起動する場合は、別のターミナルでプロジェクト直下から `./start_servers.sh` を実行します。異なるチェックポイントを報告するサーバーへの接続は拒否し、外部管理のサーバーは停止しません。生成されるスクリプトはモデルとステップ数の既定値を設定し、サーバー側の `IRODORI_CHECKPOINT` による上書きを解除します。
+
+クローン合成前に、サーバー環境の短命プロセスが DACVAE コーデックだけを読み込みます。同一話者の短い発話を個別に 48 kHz mono・FP32・決定論的エンコード・`normalize_db=-16.0` で潜在化し、時系列順に結合して120秒以下に制限します。検証済みの `.pt` を話者ごとに1つ、`speaker_refs/` に atomic に保存します。元音声・選択範囲・コーデック設定・チェックポイント・サーバー依存関係のロックファイルが変わると、参照潜在キャッシュを再生成します。
+
+各セリフには同じ話者のキャッシュを `irodori.ref_latent` として送り、`ref_wav`・Caption・Style Prompt・固定 `seconds` は送信しません。発話時間はサーバーが予測します。ボイスデザインを有効にした場合だけ、初回の参照音声生成に Caption を使います。生成声と描画キャッシュは有効なモデル・生成設定ごとに分かれ、MeanFlow で使われない Sway 設定の変更では再生成しません。保存先は[再開と出力](#再開と出力)を参照してください。
 
 ### ボイスデザインしてからクローンする
 
@@ -269,7 +292,7 @@ AGE_GENDER_MODEL_DIR=./models/age-gender
 
 年齢・性別の推定には、ご指定の[公式audEERING 24層モデル](https://huggingface.co/audeering/wav2vec2-large-robust-24-ft-age-gender)をHugging Faceから直接取得します。保存先はプロジェクト直下の `models/age-gender/hf24/`（`AGE_GENDER_MODEL_DIR` で変更可能）、容量は約1.27GBです。`models/` 全体をGitの管理対象から除外しています。相対パスはプロジェクト直下を基準とし、作業フォルダーが `temp/` でも判定モデルは移りません。生成した参照音声・クローン用潜在キャッシュは `temp/` に保存します。既存のTorch／Transformersで固定リビジョンのsafetensors重みをCPU推論します。Zenodoや第三者のミラーサイトからは取得しません。男女・青年／中年を推定し、不明、低信頼、子供判定、モデル未取得、音声不正の場合は大人の男性を使います。手動で互換性のある `model.onnx` を配置する場合だけ、`uv sync --extra voice-design --inexact` でaudonnxを追加します。既存のローカル6層ONNXキャッシュにも対応します。推定モデルのライセンスは **CC BY-NC-SA 4.0** で、商用利用には提供元の商用ライセンスが必要です。
 
-VoxCPM2は声の説明文、Irodoriは初回だけCaptionを使用します。OmniVoiceは男女・青年／中年・普通の声高を属性から選択します。翻訳先は日本語・英語に限定され、Irodori v4 Smallは日本語のみ対応します。ご指定の天気・駅前・青い屋根の文章を翻訳先言語で読み上げ、その生成音声またはIrodori参照潜在を以後のクローンに使います。モデルの重みを追加学習する方式ではありません。
+VoxCPM2は声の説明文、Irodoriは初回だけCaptionを使用します。OmniVoiceは男女・青年／中年・普通の声高を属性から選択します。翻訳先は日本語・英語に限定され、Irodori v4.1 Small MFは日本語のみ対応します。ご指定の天気・駅前・青い屋根の文章を翻訳先言語で読み上げ、その生成音声またはIrodori参照潜在を以後のクローンに使います。モデルの重みを追加学習する方式ではありません。
 
 生成声と途中結果は、音声モードごとの `voice_design/<engine>_<language>_<settings>/` 以下に保存します。出力動画にも `_voice_design_...` が付くため、従来方式の完成動画があっても実行できます。有効な生成声は再開時に再利用されます。推定モデル追加前に作った男性の代替音声も維持するので、声を作り直す場合は `VOICE_DESIGN_SEED` を変更してください。破損した参照音声だけを再生成し、参照音声の指紋でTTS・リタイム結果を分けます。Irodoriでは短命のコーデック処理の前に、このパイプライン自身が起動したサーバーだけを停止します。外部で管理するサーバーは停止しません。
 
@@ -291,7 +314,14 @@ VoxCPM2は声の説明文、Irodoriは初回だけCaptionを使用します。Om
 <ソースファイル名><OUTPUT_SUFFIX>
 ```
 
-デフォルトでは `<ソースファイル名>_xlDub.mp4` となります。
+`OUTPUT_SUFFIX` のデフォルトは `_xlDub.mp4` です。OmniVoice／VoxCPM2 の元音声クローンでは上記の名前を使い、Irodori の元音声クローンとボイスデザインでは、サフィックスの前に設定ごとの識別子を追加します。
+
+| モード | 最終ファイル名 |
+|---|---|
+| Irodori 元音声クローン | `<ソースファイル名>_irodori_<設定ハッシュ><OUTPUT_SUFFIX>` |
+| ボイスデザイン | `<ソースファイル名>_voice_design_<エンジン>_<言語>_<設定ハッシュ><OUTPUT_SUFFIX>` |
+
+Irodori のモデルやステップ数を変更すると出力名も変わるため、古い動画を残したまま新しい設定で生成できます。
 
 パイプラインは `TEMP_ROOT` 以下にチェックポイントと成果物を保存します：
 
@@ -310,6 +340,8 @@ VoxCPM2は声の説明文、Irodoriは初回だけCaptionを使用します。Om
 - Demucs 分離が無効の場合：`temp/<video>_rawaudio`
 
 NeMo のチェックポイントと参照音声は、選択した音声モードのディレクトリ内の `nemo-speech/` に保存します。他の ASR エンジンの結果を誤って再利用しません。検証済みの CLI 出力は、このディレクトリの `nemo_speech.json` に保存します。
+
+Irodori の元音声クローンでは、ASR・翻訳の保存先を維持し、`seg_audio/`・`tts_meta.json`・`retime/` を `render/<指紋>/` 以下に分けます。指紋には有効な生成設定・参照潜在の内容・翻訳済みセグメントを含めます。ボイスデザインでは音声／ASR ディレクトリの下に `voice_design/<エンジン>_<言語>_<設定ハッシュ>/` を追加し、生成声をその `speaker_refs/`、描画結果をその `render/<指紋>/` に保存します。旧モデルの共有 TTS・リタイムキャッシュは残りますが、移行後の Irodori では再利用しません。
 
 `progress.json` がソース動画のサイズおよび更新日時と一致する場合、コマンドを再実行すると完了済みの作業が再開されます。特定の動画を最初からやり直したい場合は、その動画の一時ディレクトリと既存の最終出力ファイルを削除してください。
 
@@ -351,18 +383,14 @@ uv run python -m spacy download en_core_web_sm
 
 ### Irodori-TTS-Server が起動中に終了する
 
-`IRODORI_TTS_DIR` が期待するローカルチェックアウトを使用し、CPU エクストラが同期されていることを確認してください：
+`IRODORI_TTS_DIR` に設定したサーバーのディレクトリで、CPU 環境と推論ライブラリを更新してください：
 
 ```bash
 cd Irodori-TTS-Server
-uv sync --extra cpu
+uv sync --extra cpu --upgrade-package irodori-tts --inexact
 ```
 
-デフォルトのサーバー起動コマンドは以下の通りです：
-
-```bash
-uv run --no-sync python -m irodori_openai_tts --host 0.0.0.0 --port 8088
-```
+その後プロジェクト直下に戻り、[生成した起動スクリプト](#irodori-meanflow)を使ってください。パイプラインのチェックポイント・ステップ数・デバイス設定がサーバーへ渡されます。これらの環境変数を設定せずサーバーモジュールを直接起動すると、サーバー独自のデフォルト値が使われます。
 
 それでも起動に失敗する場合は、以下を確認してください：
 
@@ -372,7 +400,7 @@ uv run --no-sync python -m irodori_openai_tts --host 0.0.0.0 --port 8088
 
 ### 出力がすでに存在する
 
-ターゲットファイルがすでに存在する場合、パイプラインはそのソース動画をスキップします。再生成するには、既存の `<ソースファイル名><OUTPUT_SUFFIX>` ファイルを削除してください。
+ターゲットファイルがすでに存在する場合、パイプラインはそのソース動画をスキップします。最終動画の合成をやり直す場合は、現在のモードに対応する完成ファイルを削除してください。Irodori やボイスデザインでは設定ごとの識別子も含む名前です。完成動画だけを削除しても、生成音声やリタイム済みのキャッシュは再利用されます。
 
 ## 開発
 

@@ -6,11 +6,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from xlanguage_dubbing import irodori_tts
+from xlanguage_dubbing import config, irodori_tts
 from xlanguage_dubbing.core import pipeline
 from xlanguage_dubbing.core.models import Segment
 from xlanguage_dubbing.servers import health
 from xlanguage_dubbing.tts.reference import SpeakerReferenceCache
+from xlanguage_dubbing.utils import PipelineError
 
 
 class _AudioResponse:
@@ -146,6 +147,9 @@ class IrodoriTtsTests(unittest.TestCase):
         )
         self.assertIn("export IRODORI_CODEC_PRECISION=fp32", script)
         self.assertIn("export IRODORI_CODEC_DETERMINISTIC_ENCODE=true", script)
+        self.assertIn(f"export IRODORI_HF_CHECKPOINT={health.IRODORI_HF_CHECKPOINT}", script)
+        self.assertIn("export IRODORI_DEFAULT_NUM_STEPS=4", script)
+        self.assertIn("export IRODORI_CHECKPOINT=''", script)
 
     def test_speech_payload_uses_ref_latent_exclusively(self) -> None:
         captured_requests = []
@@ -167,13 +171,10 @@ class IrodoriTtsTests(unittest.TestCase):
                     "urlopen",
                     side_effect=fake_urlopen,
                 ),
-                mock.patch.object(irodori_tts, "IRODORI_TTS_NUM_STEPS", 8),
-                mock.patch.object(
-                    irodori_tts,
-                    "IRODORI_TTS_T_SCHEDULE_MODE",
-                    "sway",
+                mock.patch.multiple(
+                    config, IRODORI_HF_CHECKPOINT="Aratako/Irodori-TTS-v4.1-Small-MF",
+                    IRODORI_TTS_NUM_STEPS=4, IRODORI_TTS_T_SCHEDULE_MODE="sway",
                 ),
-                mock.patch.object(irodori_tts, "IRODORI_TTS_SWAY_COEFF", -1.0),
             ):
                 irodori_tts.irodori_tts_synthesize(
                     text="テストです。",
@@ -192,12 +193,38 @@ class IrodoriTtsTests(unittest.TestCase):
             "caption",
             "style_prompt",
             "seconds",
+            "t_schedule_mode",
+            "sway_coeff",
+            "cfg_scale_text",
+            "cfg_scale_speaker",
         ):
             self.assertNotIn(forbidden_key, options)
             self.assertNotIn(forbidden_key, payload)
-        self.assertEqual(options["num_steps"], 8)
-        self.assertEqual(options["t_schedule_mode"], "sway")
-        self.assertEqual(options["sway_coeff"], -1.0)
+        self.assertEqual(options["num_steps"], 4)
+
+    def test_explicit_rf_checkpoint_keeps_legacy_sampling_controls(self) -> None:
+        with mock.patch.multiple(
+            config, IRODORI_HF_CHECKPOINT="Aratako/Irodori-TTS-v4-Small",
+            IRODORI_TTS_NUM_STEPS=8, IRODORI_TTS_T_SCHEDULE_MODE="sway",
+            IRODORI_TTS_SWAY_COEFF=-1.0,
+        ):
+            self.assertEqual(config.irodori_sampling_options(), {
+                "num_steps": 8, "t_schedule_mode": "sway", "sway_coeff": -1.0,
+            })
+
+    def test_running_old_server_is_rejected_without_starting_another(self) -> None:
+        with (
+            mock.patch.object(irodori_tts, "_SERVER_READY", False),
+            mock.patch.object(irodori_tts, "IRODORI_HF_CHECKPOINT",
+                              "Aratako/Irodori-TTS-v4.1-Small-MF"),
+            mock.patch.object(irodori_tts, "_request_json", return_value={
+                "model": {"hf_checkpoint": "Aratako/Irodori-TTS-v4-Small"},
+            }),
+            mock.patch.object(irodori_tts.subprocess, "Popen") as start,
+            self.assertRaisesRegex(PipelineError, "モデル設定が一致"),
+        ):
+            irodori_tts.ensure_irodori_tts_server()
+        start.assert_not_called()
 
     def test_ababcabc_generation_order_and_speaker_latent_reuse(self) -> None:
         calls = []

@@ -98,13 +98,13 @@ def _get_tts_engine_display_name() -> str:
 
 
 def _validate_tts_language_pair(detected_lang: str) -> None:
-    """Irodori-TTS-v4-Small は日本語 TTS として扱う。"""
+    """Restrict Irodori synthesis to Japanese output."""
     if not _is_irodori_tts():
         return
 
     if OUTPUT_LANG != "ja":
         raise PipelineError(
-            "Irodori-TTS-v4-Small は日本語 TTS です。"
+            "Irodori-TTS-v4.1-Small-MF は日本語 TTS です。"
             f" OUTPUT_LANG={OUTPUT_LANG} では使用できません。"
         )
 
@@ -447,6 +447,13 @@ def process_one_video(
             "segments": [(s.speaker_id, s.start, s.end, s.text_tgt) for s in segments_translated],
         })
         tts_work_dir = work_dir / "render" / render_fingerprint[:20]
+    elif _is_irodori_tts():
+        from xlanguage_dubbing.tts.voice_design import irodori_render_fingerprint
+        tts_work_dir = work_dir / "render" / irodori_render_fingerprint(
+            segments_translated, ref_cache
+        )[:20]
+
+    if tts_work_dir != work_dir:
         seg_audio_dir = tts_work_dir / "seg_audio"
         ensure_dir(seg_audio_dir)
 

@@ -14,6 +14,7 @@ from xlanguage_dubbing.config import (
     IRODORI_HF_CHECKPOINT,
     IRODORI_MODEL_DEVICE,
     IRODORI_TTS_DIR,
+    IRODORI_TTS_NUM_STEPS,
     IRODORI_TTS_SERVER_HOST,
     IRODORI_TTS_SERVER_PORT,
     TTS_ENGINE,
@@ -49,6 +50,8 @@ set -euo pipefail
 #   git clone https://github.com/Aratako/Irodori-TTS-Server.git
 #   cd Irodori-TTS-Server
 #   uv sync --extra cpu
+# Existing installations need the MeanFlow-capable inference library:
+#   uv sync --extra cpu --upgrade-package irodori-tts --inexact
 
 export IRODORI_MODEL_DEVICE={shlex.quote(IRODORI_MODEL_DEVICE)}
 export IRODORI_CODEC_DEVICE={shlex.quote(IRODORI_CODEC_DEVICE)}
@@ -56,6 +59,8 @@ export IRODORI_CODEC_REPO={shlex.quote(IRODORI_CODEC_REPO)}
 export IRODORI_CODEC_PRECISION=fp32
 export IRODORI_CODEC_DETERMINISTIC_ENCODE=true
 export IRODORI_HF_CHECKPOINT={shlex.quote(IRODORI_HF_CHECKPOINT)}
+export IRODORI_CHECKPOINT=''
+export IRODORI_DEFAULT_NUM_STEPS={IRODORI_TTS_NUM_STEPS}
 
 cd "{IRODORI_TTS_DIR}"
 {start_command}

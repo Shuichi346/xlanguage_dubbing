@@ -56,7 +56,31 @@ def validate_voice_design(engine: str, language: str) -> None:
     if engine not in {"omnivoice", "voxcpm2", "irodori", "irodori-tts", "irodori_tts"}:
         raise PipelineError(f"ボイスデザイン未対応の TTS_ENGINE: {engine}")
     if engine.startswith("irodori") and language != "ja":
-        raise PipelineError("Irodori-TTS-v4-Small のボイスデザインは日本語のみ対応しています。")
+        raise PipelineError("Irodori-TTS のボイスデザインは日本語のみ対応しています。")
+
+
+def irodori_synthesis_settings() -> dict:
+    """Fingerprint effective settings for both original and designed voices."""
+    return {
+        "model": config.IRODORI_HF_CHECKPOINT,
+        "codec": _irodori_codec_cache_settings(),
+        "sampling": config.irodori_sampling_options(),
+        "speed": config.IRODORI_TTS_SPEED,
+        "language": config.OUTPUT_LANG,
+    }
+
+
+def irodori_render_fingerprint(segments: list[Segment], cache: SpeakerReferenceCache) -> str:
+    """Keep previous model audio, translations, and reference voices out of a render."""
+    references = {}
+    for speaker in sorted({segment.speaker_id for segment in segments}):
+        path = cache.get_irodori_speaker_reference_latent_path(speaker)
+        references[speaker] = _file_sha256(path) if path is not None else None
+    return _json_sha256({
+        "settings": irodori_synthesis_settings(),
+        "references": references,
+        "segments": [(s.speaker_id, s.start, s.end, s.text_tgt) for s in segments],
+    })
 
 
 def design_settings() -> dict:
@@ -64,14 +88,7 @@ def design_settings() -> dict:
     engine = config.TTS_ENGINE
     if engine.startswith("irodori"):
         engine = "irodori"
-        options = {
-            "model": config.IRODORI_HF_CHECKPOINT,
-            "codec": _irodori_codec_cache_settings(),
-            "steps": config.IRODORI_TTS_NUM_STEPS,
-            "schedule": config.IRODORI_TTS_T_SCHEDULE_MODE,
-            "sway": config.IRODORI_TTS_SWAY_COEFF,
-            "speed": config.IRODORI_TTS_SPEED,
-        }
+        options = irodori_synthesis_settings()
     elif engine == "voxcpm2":
         options = {
             "model": config.VOXCPM2_MODEL,
@@ -106,6 +123,8 @@ def output_path_for_video(video_path: Path) -> Path:
     suffix = config.OUTPUT_SUFFIX
     if config.ENABLE_VOICE_DESIGN:
         suffix = f"_voice_design_{design_namespace()}{suffix}"
+    elif config.TTS_ENGINE.startswith("irodori"):
+        suffix = f"_irodori_{_json_sha256(irodori_synthesis_settings())[:12]}{suffix}"
     return video_path.with_name(video_path.stem + suffix)
 
 

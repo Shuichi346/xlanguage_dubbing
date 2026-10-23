@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-23
+
+### Fixed
+
+- Prevented original-voice Irodori jobs from reusing older model audio, retimed tracks, or final videos by separating render caches and output filenames with synthesis-setting fingerprints.
+- Rejected an already running Irodori server reporting a different checkpoint and prevented server-local checkpoint overrides during pipeline-managed startup.
+
+### Changed
+
+- Migrated the default Irodori checkpoint to `Aratako/Irodori-TTS-v4.1-Small-MF` with four MeanFlow steps for both voice design and latent-based cloning, and omitted RF-only Sway/CFG request controls for that checkpoint.
+- Updated the local server's inference library for MeanFlow support, regenerated the launch script, and documented the dependency upgrade for existing installations. Explicit RF checkpoints retained their configurable sampling controls.
+
 ## 2026-10-21
 
 ### Added

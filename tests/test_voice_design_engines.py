@@ -11,7 +11,7 @@ import numpy as np
 import soundfile as sf
 import torch
 
-from xlanguage_dubbing import irodori_tts, omnivoice_tts, voxcpm2_tts
+from xlanguage_dubbing import config, irodori_tts, omnivoice_tts, voxcpm2_tts
 from xlanguage_dubbing.utils import PipelineError
 
 
@@ -138,6 +138,9 @@ class VoiceDesignEngineTests(unittest.TestCase):
             with (
                 mock.patch.object(irodori_tts, "ensure_irodori_tts_server"),
                 mock.patch.object(irodori_tts.urllib.request, "urlopen", side_effect=urlopen),
+                mock.patch.multiple(config,
+                                    IRODORI_HF_CHECKPOINT="Aratako/Irodori-TTS-v4.1-Small-MF",
+                                    IRODORI_TTS_NUM_STEPS=4),
             ):
                 irodori_tts.irodori_design_voice(
                     "こんにちは。", Path(folder) / "voice.wav", "落ち着いた男性", 5, "ja",
@@ -149,9 +152,9 @@ class VoiceDesignEngineTests(unittest.TestCase):
         self.assertTrue(options["no_ref"])
         self.assertEqual(options["seed"], 5)
         self.assertFalse(options["chunking_enabled"])
-        self.assertEqual(options["num_steps"], irodori_tts.IRODORI_TTS_NUM_STEPS)
-        self.assertEqual(options["t_schedule_mode"], "sway")
-        for key in ("ref_wav", "ref_latent", "seconds", "style_prompt"):
+        self.assertEqual(options["num_steps"], 4)
+        for key in ("ref_wav", "ref_latent", "seconds", "style_prompt",
+                    "t_schedule_mode", "sway_coeff", "cfg_scale_caption"):
             self.assertNotIn(key, options)
 
     def test_invalid_language_or_attributes_fail_before_loading_models(self) -> None:

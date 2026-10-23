@@ -36,11 +36,10 @@ from xlanguage_dubbing.config import (
     IRODORI_TTS_SPEED,
     IRODORI_TTS_START_COMMAND,
     IRODORI_TTS_START_TIMEOUT_SEC,
-    IRODORI_TTS_SWAY_COEFF,
-    IRODORI_TTS_T_SCHEDULE_MODE,
     MIN_SEGMENT_SEC,
     TTS_CHANNELS,
     TTS_SAMPLE_RATE,
+    irodori_sampling_options,
 )
 from xlanguage_dubbing.core.models import Segment, TtsMeta
 from xlanguage_dubbing.tts.reference import SpeakerReferenceCache
@@ -122,6 +121,9 @@ def _server_env() -> dict[str, str]:
     env["IRODORI_CODEC_PRECISION"] = "fp32"
     env["IRODORI_CODEC_DETERMINISTIC_ENCODE"] = "true"
     env["IRODORI_HF_CHECKPOINT"] = IRODORI_HF_CHECKPOINT
+    # A server-local checkpoint must not override the pipeline's selected model.
+    env["IRODORI_CHECKPOINT"] = ""
+    env["IRODORI_DEFAULT_NUM_STEPS"] = str(IRODORI_TTS_NUM_STEPS)
     if IRODORI_TTS_API_KEY:
         env.setdefault("IRODORI_API_KEY", IRODORI_TTS_API_KEY)
     return env
@@ -152,6 +154,17 @@ def release_irodori_tts_server() -> None:
     _stop_spawned_server()
 
 
+def _validate_server_checkpoint(health: dict) -> None:
+    """Do not silently send MeanFlow jobs to an already running RF server."""
+    actual = health.get("model", {}).get("hf_checkpoint")
+    if actual != IRODORI_HF_CHECKPOINT:
+        raise PipelineError(
+            "Irodori-TTS-Server のモデル設定が一致しません。\n"
+            f"  expected: {IRODORI_HF_CHECKPOINT}\n  actual: {actual}\n"
+            "  既存サーバーを停止し、更新した start_servers.sh で再起動してください。"
+        )
+
+
 def ensure_irodori_tts_server() -> None:
     """Irodori-TTS-Server を利用可能な状態にする。"""
     global _SERVER_PROCESS, _SERVER_LOG_FILE, _SERVER_READY
@@ -160,11 +173,13 @@ def ensure_irodori_tts_server() -> None:
         return
 
     try:
-        _request_json("/health", timeout=2.0)
-        _SERVER_READY = True
-        return
+        health = _request_json("/health", timeout=2.0)
     except Exception:
         pass
+    else:
+        _validate_server_checkpoint(health)
+        _SERVER_READY = True
+        return
 
     if not IRODORI_TTS_AUTO_START:
         raise PipelineError(
@@ -206,12 +221,14 @@ def ensure_irodori_tts_server() -> None:
     deadline = time.time() + IRODORI_TTS_START_TIMEOUT_SEC
     while time.time() < deadline:
         try:
-            _request_json("/health", timeout=2.0)
+            health = _request_json("/health", timeout=2.0)
+        except Exception:
+            pass
+        else:
+            _validate_server_checkpoint(health)
             print_step("  Irodori-TTS-Server 起動完了")
             _SERVER_READY = True
             return
-        except Exception:
-            pass
         if _SERVER_PROCESS.poll() is not None:
             raise PipelineError(
                 "Irodori-TTS-Server が起動前に終了しました。\n"
@@ -242,9 +259,7 @@ def irodori_tts_synthesize(
         "speed": IRODORI_TTS_SPEED,
         "irodori": {
             "ref_latent": str(ref_latent_path),
-            "num_steps": IRODORI_TTS_NUM_STEPS,
-            "t_schedule_mode": IRODORI_TTS_T_SCHEDULE_MODE,
-            "sway_coeff": IRODORI_TTS_SWAY_COEFF,
+            **irodori_sampling_options(),
         },
     }
     _request_speech(payload, out_audio)
@@ -255,7 +270,7 @@ def irodori_design_voice(
 ) -> None:
     """Create the initial Japanese voice; later cloning uses its latent only."""
     if language != "ja":
-        raise PipelineError("Irodori-TTS-v4-Small のボイスデザインは日本語のみ対応しています。")
+        raise PipelineError("Irodori-TTS のボイスデザインは日本語のみ対応しています。")
     if not prompt.strip() or not text.strip():
         raise PipelineError("ボイスデザインのプロンプトと読み上げ文章が必要です。")
     ensure_dir(out_wav.parent)
@@ -269,9 +284,7 @@ def irodori_design_voice(
             "caption": prompt,
             "no_ref": True,
             "seed": seed,
-            "num_steps": IRODORI_TTS_NUM_STEPS,
-            "t_schedule_mode": IRODORI_TTS_T_SCHEDULE_MODE,
-            "sway_coeff": IRODORI_TTS_SWAY_COEFF,
+            **irodori_sampling_options(),
             # A single sample avoids independent chunk voices in the reference.
             "chunking_enabled": False,
         },

@@ -248,8 +248,8 @@ IRODORI_TTS_REQUEST_TIMEOUT_SEC = _env_int("IRODORI_TTS_REQUEST_TIMEOUT_SEC", 60
 IRODORI_TTS_API_KEY = _env("IRODORI_TTS_API_KEY", "").strip()
 IRODORI_TTS_MODEL = _env("IRODORI_TTS_MODEL", "irodori-tts").strip()
 IRODORI_HF_CHECKPOINT = _env(
-    "IRODORI_HF_CHECKPOINT", "Aratako/Irodori-TTS-v4-Small"
-).strip() or "Aratako/Irodori-TTS-v4-Small"
+    "IRODORI_HF_CHECKPOINT", "Aratako/Irodori-TTS-v4.1-Small-MF"
+).strip() or "Aratako/Irodori-TTS-v4.1-Small-MF"
 IRODORI_CODEC_REPO = _env(
     "IRODORI_CODEC_REPO", "Aratako/Semantic-DACVAE-Japanese-32dim"
 ).strip() or "Aratako/Semantic-DACVAE-Japanese-32dim"
@@ -259,15 +259,27 @@ IRODORI_TTS_RESPONSE_FORMAT = _env(
     "IRODORI_TTS_RESPONSE_FORMAT", "wav"
 ).strip().lower()
 IRODORI_TTS_SPEED = _env_float("IRODORI_TTS_SPEED", 1.0)
-IRODORI_TTS_NUM_STEPS = _env_int("IRODORI_TTS_NUM_STEPS", 8)
+IRODORI_TTS_NUM_STEPS = _env_int("IRODORI_TTS_NUM_STEPS", 4)
 IRODORI_TTS_T_SCHEDULE_MODE = _env_choice(
-    "IRODORI_TTS_T_SCHEDULE_MODE", "sway", {"linear", "sway"}
+    "IRODORI_TTS_T_SCHEDULE_MODE", "linear", {"linear", "sway"}
 )
 IRODORI_TTS_SWAY_COEFF = _env_float("IRODORI_TTS_SWAY_COEFF", -1.0)
 IRODORI_REFERENCE_MAX_SEC = min(
     120.0,
     max(1.0, _env_float("IRODORI_REFERENCE_MAX_SEC", 120.0)),
 )
+
+
+def irodori_sampling_options() -> dict[str, int | float | str]:
+    """Omit RF-only controls for the official MeanFlow checkpoint family."""
+    options: dict[str, int | float | str] = {"num_steps": IRODORI_TTS_NUM_STEPS}
+    repo_name = IRODORI_HF_CHECKPOINT.split("/")[-1].lower()
+    if not repo_name.endswith("-mf"):
+        options.update(
+            t_schedule_mode=IRODORI_TTS_T_SCHEDULE_MODE,
+            sway_coeff=IRODORI_TTS_SWAY_COEFF,
+        )
+    return options
 
 # =========================
 # 音声設定（最終出力ミックス用）
