@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-10-23
+
+### Fixed
+
+- Prevented original-voice Irodori jobs from reusing older model audio, retimed tracks, or final videos by separating render caches and output filenames with synthesis-setting fingerprints.
+- Rejected an already running Irodori server reporting a different checkpoint and prevented server-local checkpoint overrides during pipeline-managed startup.
+
+### Added
+
+- Added `scripts/setup_irodori.sh` to install the pinned nonWatermark server fork and its locked inference dependency, while preserving existing official-server checkouts and local edits.
+
+### Changed
+
+- Switched both the server and inference library to the user's nonWatermark forks, removing SilentCipher loading and embedding from newly generated speech while preserving MF and latent-based cloning. Pinned the server to `ee9fd035cb65223927eb4058d89cb76708756732` and consumed its locked inference commit `0e984c21294ab699476c4b78e2f117b07a485163`.
+- Changed the active and default `IRODORI_TTS_DIR` to `./Irodori-TTS-Server-nonWatermark`, created its separate environment, and regenerated the startup script for that checkout.
+- Migrated the default Irodori checkpoint to `Aratako/Irodori-TTS-v4.1-Small-MF` with four MeanFlow steps for both voice design and latent-based cloning, and omitted RF-only Sway/CFG request controls for that checkpoint.
+- Updated the local server's inference library for MeanFlow support, regenerated the launch script, and documented the dependency upgrade for existing installations. Explicit RF checkpoints retained their configurable sampling controls.
+
+## 2026-10-21
+
+### Added
+
+- Added opt-in `ENABLE_VOICE_DESIGN` for Japanese/English target-language speaker voices with VoxCPM2 and OmniVoice, and Japanese voice design with Irodori-TTS-v4-Small. Each speaker read the fixed reference passage once, and subsequent lines reused the generated voice.
+- Added audEERING age/gender estimation, bounded CPU inference, an adult-male uncertainty fallback, and configurable `VOICE_DESIGN_SEED` / `AGE_GENDER_MODEL_DIR` settings.
+- Added atomically published speaker references, per-speaker cache validation and recovery, reusable OmniVoice clone prompts, and generated Irodori latent caches through the codec-only worker.
+- Added separate voice-design output names and engine/language/settings/render namespaces so original voices and prior generated voices did not mix on resume.
+
+### Fixed
+
+- Replaced the unavailable Zenodo model-download path with the official pinned Hugging Face 24-layer safetensors checkpoint, preserving both prediction heads and compatible local ONNX exports.
+
+### Changed
+
+- Kept persistent age/gender models under the project-root `models/` directory, independently of the working directory, and excluded the entire directory from Git. Generated voice-clone references remained under `temp/`.
+
 ## DATE UNKNOWN
 
 ### Fixed

@@ -116,6 +116,8 @@ def voxcpm2_synthesize(
     out_wav: Path,
     ref_audio_path: Path | None = None,
     ref_text: str = "",
+    *,
+    seed: int | None = None,
 ) -> None:
     """VoxCPM2 の Controllable Cloning モードで音声を合成する。"""
     ensure_dir(out_wav.parent)
@@ -131,7 +133,19 @@ def voxcpm2_synthesize(
         gen_kwargs["reference_wav_path"] = str(ref_audio_path)
 
     try:
-        wav = model.generate(**gen_kwargs)
+        # Fork only CPU/MPS RNGs so sample creation does not change later synthesis.
+        mps_state = None
+        with torch.random.fork_rng(devices=[], device_type="cpu", enabled=seed is not None):
+            try:
+                if seed is not None:
+                    torch.default_generator.manual_seed(seed)
+                    if torch.backends.mps.is_available():
+                        mps_state = torch.mps.get_rng_state()
+                        torch.mps.manual_seed(seed)
+                wav = model.generate(**gen_kwargs)
+            finally:
+                if mps_state is not None:
+                    torch.mps.set_rng_state(mps_state)
     except Exception as exc:
         raise PipelineError(f"VoxCPM2 生成エラー: {exc}") from exc
 
@@ -161,6 +175,19 @@ def voxcpm2_synthesize(
         sample_rate = int(model.tts_model.sample_rate)
 
     sf.write(str(out_wav), wav_np, sample_rate)
+
+
+def voxcpm2_design_voice(
+    text: str, out_wav: Path, prompt: str, seed: int, language: str,
+) -> None:
+    """Generate a new voice using VoxCPM2's parenthesized text prefix."""
+    if language not in {"ja", "en"}:
+        raise PipelineError("ボイスデザインは日本語・英語のみ対応しています。")
+    if not prompt.strip() or not text.strip():
+        raise PipelineError("ボイスデザインのプロンプトと読み上げ文章が必要です。")
+    # VoxCPM2 infers language from the spoken text and has no language argument.
+    description = prompt.strip().replace("(", "").replace(")", "")
+    voxcpm2_synthesize(f"({description}){text}", out_wav, seed=seed)
 
 
 def _convert_to_flac(in_wav: Path, out_flac: Path) -> None:

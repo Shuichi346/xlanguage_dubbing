@@ -123,6 +123,7 @@ def run_case(case: MatrixCase) -> CaseResult:
             "OUTPUT_LANG": "ja",
             "ASR_ENGINE": case.asr_engine,
             "ENABLE_AUDIO_SEPARATION": case.enable_audio_separation,
+            "ENABLE_VOICE_DESIGN": "false",
             "TTS_ENGINE": case.tts_engine,
             "OUTPUT_SUFFIX": output_suffix,
             "KEEP_TEMP": "true",

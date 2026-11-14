@@ -27,6 +27,7 @@ from xlanguage_dubbing.config import (
     OMNIVOICE_QUALITY_RETRIES,
     OMNIVOICE_SAMPLE_RATE,
     OMNIVOICE_SPEED,
+    OUTPUT_LANG,
     TTS_CHANNELS,
     TTS_SAMPLE_RATE,
 )
@@ -42,6 +43,7 @@ from xlanguage_dubbing.utils import (
 )
 
 _OMNIVOICE_MODEL = None
+_DESIGNED_VOICE_PROMPTS: dict[tuple[str, int, int, str], object] = {}
 
 
 class TTSQualityError(Exception):
@@ -100,6 +102,8 @@ def release_omnivoice_model() -> None:
     """OmniVoice モデルを解放する。"""
     global _OMNIVOICE_MODEL
 
+    _DESIGNED_VOICE_PROMPTS.clear()
+
     if _OMNIVOICE_MODEL is not None:
         del _OMNIVOICE_MODEL
         _OMNIVOICE_MODEL = None
@@ -126,6 +130,11 @@ def omnivoice_synthesize(
     ref_audio_path: Path | None = None,
     ref_text: str = "",
     target_duration: float | None = None,
+    *,
+    language: str = OUTPUT_LANG,
+    instruct: str | None = None,
+    seed: int | None = None,
+    cache_voice_prompt: bool = False,
 ) -> None:
     """OmniVoice で音声を合成する。"""
     ensure_dir(out_wav.parent)
@@ -135,12 +144,34 @@ def omnivoice_synthesize(
         "text": text,
         "num_step": OMNIVOICE_NUM_STEP,
         "guidance_scale": OMNIVOICE_GUIDANCE_SCALE,
+        "language": language,
     }
 
+    if instruct is not None:
+        gen_kwargs["instruct"] = instruct
+
     if ref_audio_path is not None and ref_audio_path.exists():
-        gen_kwargs["ref_audio"] = str(ref_audio_path)
-        if ref_text.strip():
-            gen_kwargs["ref_text"] = ref_text.strip()
+        if cache_voice_prompt:
+            reference = ref_audio_path.resolve()
+            identity = reference.stat()
+            key = (str(reference), identity.st_mtime_ns, identity.st_size, ref_text.strip())
+            if key not in _DESIGNED_VOICE_PROMPTS:
+                try:
+                    prompt = model.create_voice_clone_prompt(
+                        ref_audio=str(reference), ref_text=ref_text.strip() or None,
+                    )
+                except Exception as exc:
+                    raise PipelineError(f"OmniVoice 参照声の準備に失敗しました: {exc}") from exc
+                # Replace stale encodings of the same reference without retaining tensors.
+                for old_key in list(_DESIGNED_VOICE_PROMPTS):
+                    if old_key[0] == str(reference):
+                        del _DESIGNED_VOICE_PROMPTS[old_key]
+                _DESIGNED_VOICE_PROMPTS[key] = prompt
+            gen_kwargs["voice_clone_prompt"] = _DESIGNED_VOICE_PROMPTS[key]
+        else:
+            gen_kwargs["ref_audio"] = str(ref_audio_path)
+            if ref_text.strip():
+                gen_kwargs["ref_text"] = ref_text.strip()
 
     if target_duration is not None and target_duration > 0:
         gen_kwargs["duration"] = target_duration
@@ -148,7 +179,18 @@ def omnivoice_synthesize(
         gen_kwargs["speed"] = OMNIVOICE_SPEED
 
     try:
-        audio_list = model.generate(**gen_kwargs)
+        mps_state = None
+        with torch.random.fork_rng(devices=[], device_type="cpu", enabled=seed is not None):
+            try:
+                if seed is not None:
+                    torch.default_generator.manual_seed(seed)
+                    if torch.backends.mps.is_available():
+                        mps_state = torch.mps.get_rng_state()
+                        torch.mps.manual_seed(seed)
+                audio_list = model.generate(**gen_kwargs)
+            finally:
+                if mps_state is not None:
+                    torch.mps.set_rng_state(mps_state)
     except Exception as exc:
         raise PipelineError(f"OmniVoice 生成エラー: {exc}") from exc
 
@@ -176,6 +218,24 @@ def omnivoice_synthesize(
         sample_rate = int(model.sampling_rate)
 
     sf.write(str(out_wav), wav_np, sample_rate)
+
+
+def omnivoice_design_voice(
+    text: str, out_wav: Path, gender: str, age: str, seed: int, language: str,
+) -> None:
+    """Select supported gender/age attributes with a normal voice pitch."""
+    if language not in {"ja", "en"}:
+        raise PipelineError("ボイスデザインは日本語・英語のみ対応しています。")
+    age_options = {
+        "young_adult": "young adult", "young adult": "young adult",
+        "middle_aged": "middle-aged", "middle-aged": "middle-aged",
+    }
+    if gender not in {"male", "female"} or age not in age_options:
+        raise PipelineError("OmniVoice の声属性は男女・青年/中年から選択してください。")
+    omnivoice_synthesize(
+        text, out_wav, language=language,
+        instruct=f"{gender}, {age_options[age]}, moderate pitch", seed=seed,
+    )
 
 
 def _convert_to_flac(in_wav: Path, out_flac: Path) -> None:
@@ -220,6 +280,7 @@ def _synthesize_with_quality_retry(
     ref_audio_path: Path | None,
     ref_text: str,
     target_duration: float,
+    cache_voice_prompt: bool = False,
 ) -> None:
     """品質チェック付きで OmniVoice を実行する。"""
     attempts = OMNIVOICE_QUALITY_RETRIES + 1
@@ -231,6 +292,7 @@ def _synthesize_with_quality_retry(
             ref_audio_path=ref_audio_path,
             ref_text=ref_text,
             target_duration=target_duration,
+            cache_voice_prompt=cache_voice_prompt,
         )
 
         if not tmp_wav.exists() or tmp_wav.stat().st_size <= 100:
@@ -313,6 +375,7 @@ def generate_segment_tts_omnivoice(
             ref_audio_path=reference_speech,
             ref_text=reference_text,
             target_duration=target_duration,
+            cache_voice_prompt=bool(getattr(ref_cache, "uses_designed_voices", False)),
         )
         _convert_to_flac(tmp_wav, out_flac)
         duration = ffprobe_duration_sec(out_flac)

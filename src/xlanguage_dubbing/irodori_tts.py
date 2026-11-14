@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""
-Irodori-TTS-Server による日本語ボイスクローン TTS。
+"""Japanese TTS through the Irodori server's speech API.
 
-サーバーは OpenAI 互換の /v1/audio/speech API を提供する。
-このクライアントは caption/style prompt と seconds を送らず、
-話者ごとのキャッシュ済み参照潜在を irodori.ref_latent として渡す。
+Cloning uses each speaker's cached latent without caption or fixed seconds.
+Initial voice design uses caption alone to create a reusable native reference.
 """
 
 from __future__ import annotations
@@ -38,11 +36,10 @@ from xlanguage_dubbing.config import (
     IRODORI_TTS_SPEED,
     IRODORI_TTS_START_COMMAND,
     IRODORI_TTS_START_TIMEOUT_SEC,
-    IRODORI_TTS_SWAY_COEFF,
-    IRODORI_TTS_T_SCHEDULE_MODE,
     MIN_SEGMENT_SEC,
     TTS_CHANNELS,
     TTS_SAMPLE_RATE,
+    irodori_sampling_options,
 )
 from xlanguage_dubbing.core.models import Segment, TtsMeta
 from xlanguage_dubbing.tts.reference import SpeakerReferenceCache
@@ -124,6 +121,9 @@ def _server_env() -> dict[str, str]:
     env["IRODORI_CODEC_PRECISION"] = "fp32"
     env["IRODORI_CODEC_DETERMINISTIC_ENCODE"] = "true"
     env["IRODORI_HF_CHECKPOINT"] = IRODORI_HF_CHECKPOINT
+    # A server-local checkpoint must not override the pipeline's selected model.
+    env["IRODORI_CHECKPOINT"] = ""
+    env["IRODORI_DEFAULT_NUM_STEPS"] = str(IRODORI_TTS_NUM_STEPS)
     if IRODORI_TTS_API_KEY:
         env.setdefault("IRODORI_API_KEY", IRODORI_TTS_API_KEY)
     return env
@@ -149,6 +149,22 @@ def _stop_spawned_server() -> None:
 atexit.register(_stop_spawned_server)
 
 
+def release_irodori_tts_server() -> None:
+    """Stop only the server owned by this pipeline before reference encoding."""
+    _stop_spawned_server()
+
+
+def _validate_server_checkpoint(health: dict) -> None:
+    """Do not silently send MeanFlow jobs to an already running RF server."""
+    actual = health.get("model", {}).get("hf_checkpoint")
+    if actual != IRODORI_HF_CHECKPOINT:
+        raise PipelineError(
+            "Irodori-TTS-Server のモデル設定が一致しません。\n"
+            f"  expected: {IRODORI_HF_CHECKPOINT}\n  actual: {actual}\n"
+            "  既存サーバーを停止し、更新した start_servers.sh で再起動してください。"
+        )
+
+
 def ensure_irodori_tts_server() -> None:
     """Irodori-TTS-Server を利用可能な状態にする。"""
     global _SERVER_PROCESS, _SERVER_LOG_FILE, _SERVER_READY
@@ -157,11 +173,13 @@ def ensure_irodori_tts_server() -> None:
         return
 
     try:
-        _request_json("/health", timeout=2.0)
-        _SERVER_READY = True
-        return
+        health = _request_json("/health", timeout=2.0)
     except Exception:
         pass
+    else:
+        _validate_server_checkpoint(health)
+        _SERVER_READY = True
+        return
 
     if not IRODORI_TTS_AUTO_START:
         raise PipelineError(
@@ -174,8 +192,7 @@ def ensure_irodori_tts_server() -> None:
         raise PipelineError(
             "Irodori-TTS-Server のディレクトリが見つかりません。\n"
             f"  IRODORI_TTS_DIR={IRODORI_TTS_DIR}\n"
-            "  例: git clone https://github.com/Aratako/Irodori-TTS-Server.git "
-            "Irodori-TTS-Server && cd Irodori-TTS-Server && uv sync --extra cpu"
+            f"  例: bash scripts/setup_irodori.sh {shlex.quote(str(IRODORI_TTS_DIR))}"
         )
 
     cmd = _select_start_command()
@@ -203,12 +220,14 @@ def ensure_irodori_tts_server() -> None:
     deadline = time.time() + IRODORI_TTS_START_TIMEOUT_SEC
     while time.time() < deadline:
         try:
-            _request_json("/health", timeout=2.0)
+            health = _request_json("/health", timeout=2.0)
+        except Exception:
+            pass
+        else:
+            _validate_server_checkpoint(health)
             print_step("  Irodori-TTS-Server 起動完了")
             _SERVER_READY = True
             return
-        except Exception:
-            pass
         if _SERVER_PROCESS.poll() is not None:
             raise PipelineError(
                 "Irodori-TTS-Server が起動前に終了しました。\n"
@@ -239,11 +258,40 @@ def irodori_tts_synthesize(
         "speed": IRODORI_TTS_SPEED,
         "irodori": {
             "ref_latent": str(ref_latent_path),
-            "num_steps": IRODORI_TTS_NUM_STEPS,
-            "t_schedule_mode": IRODORI_TTS_T_SCHEDULE_MODE,
-            "sway_coeff": IRODORI_TTS_SWAY_COEFF,
+            **irodori_sampling_options(),
         },
     }
+    _request_speech(payload, out_audio)
+
+
+def irodori_design_voice(
+    text: str, out_wav: Path, prompt: str, seed: int, language: str,
+) -> None:
+    """Create the initial Japanese voice; later cloning uses its latent only."""
+    if language != "ja":
+        raise PipelineError("Irodori-TTS のボイスデザインは日本語のみ対応しています。")
+    if not prompt.strip() or not text.strip():
+        raise PipelineError("ボイスデザインのプロンプトと読み上げ文章が必要です。")
+    ensure_dir(out_wav.parent)
+    ensure_irodori_tts_server()
+    _request_speech({
+        "model": IRODORI_TTS_MODEL,
+        "input": text,
+        "response_format": "wav",
+        "speed": IRODORI_TTS_SPEED,
+        "irodori": {
+            "caption": prompt,
+            "no_ref": True,
+            "seed": seed,
+            **irodori_sampling_options(),
+            # A single sample avoids independent chunk voices in the reference.
+            "chunking_enabled": False,
+        },
+    }, out_wav)
+
+
+def _request_speech(payload: dict, out_audio: Path) -> None:
+    """Write an audio response from the shared speech endpoint."""
     body = json.dumps(payload).encode("utf-8")
     headers = {
         "Accept": "audio/*",

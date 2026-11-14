@@ -14,6 +14,7 @@ from xlanguage_dubbing.config import (
     IRODORI_HF_CHECKPOINT,
     IRODORI_MODEL_DEVICE,
     IRODORI_TTS_DIR,
+    IRODORI_TTS_NUM_STEPS,
     IRODORI_TTS_SERVER_HOST,
     IRODORI_TTS_SERVER_PORT,
     TTS_ENGINE,
@@ -46,9 +47,8 @@ set -euo pipefail
 
 # === xlanguage-dubbing Irodori-TTS-Server 起動スクリプト ===
 # Setup:
-#   git clone https://github.com/Aratako/Irodori-TTS-Server.git
-#   cd Irodori-TTS-Server
-#   uv sync --extra cpu
+#   bash scripts/setup_irodori.sh {shlex.quote(str(IRODORI_TTS_DIR))}
+# The helper pins the nonWatermark server fork and its locked inference library.
 
 export IRODORI_MODEL_DEVICE={shlex.quote(IRODORI_MODEL_DEVICE)}
 export IRODORI_CODEC_DEVICE={shlex.quote(IRODORI_CODEC_DEVICE)}
@@ -56,6 +56,8 @@ export IRODORI_CODEC_REPO={shlex.quote(IRODORI_CODEC_REPO)}
 export IRODORI_CODEC_PRECISION=fp32
 export IRODORI_CODEC_DETERMINISTIC_ENCODE=true
 export IRODORI_HF_CHECKPOINT={shlex.quote(IRODORI_HF_CHECKPOINT)}
+export IRODORI_CHECKPOINT=''
+export IRODORI_DEFAULT_NUM_STEPS={IRODORI_TTS_NUM_STEPS}
 
 cd "{IRODORI_TTS_DIR}"
 {start_command}
