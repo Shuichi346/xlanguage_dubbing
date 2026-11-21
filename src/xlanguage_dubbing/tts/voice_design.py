@@ -125,7 +125,8 @@ def output_path_for_video(video_path: Path) -> Path:
         suffix = f"_voice_design_{design_namespace()}{suffix}"
     elif config.TTS_ENGINE.startswith("irodori"):
         suffix = f"_irodori_{_json_sha256(irodori_synthesis_settings())[:12]}{suffix}"
-    return video_path.with_name(video_path.stem + suffix)
+    from xlanguage_dubbing.translation.plamo import translation_namespace
+    return video_path.with_name(video_path.stem + "_" + translation_namespace() + suffix)
 
 
 def _audio_duration(path: Path) -> float:

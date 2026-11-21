@@ -14,7 +14,6 @@ dependencies = [
     "torchaudio==2.8.0",
     "numpy>=1.26.0",
     "pyannote-audio>=4.0.4",
-    "llama-cpp-python>=0.3.0",
     "huggingface-hub>=0.20.0",
     "sentencepiece>=0.2.1",
     "mlx>=0.25.0",

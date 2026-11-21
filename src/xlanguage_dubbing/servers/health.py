@@ -69,12 +69,12 @@ cd "{IRODORI_TTS_DIR}"
 
     script = """#!/bin/bash
 # === xlanguage-dubbing サーバー起動スクリプト ===
-# 翻訳: CAT-Translate-7b / TranslateGemma-12b-it（プロセス内推論・サーバー不要）
+# 翻訳: PLaMo 3 Translate 8B Q4_K_M（専用 llama-server を自動起動・終了）
 # TTS:  OmniVoice / VoxCPM2（プロセス内推論・サーバー不要）
 
 echo "=== xlanguage-dubbing ==="
 echo ""
-echo "外部サーバーの起動は不要です。"
+echo "翻訳の llama-server は自動起動します。手動での起動は不要です。"
 echo "直接 'uv run xlanguage-dubbing' を実行してください。"
 """
 

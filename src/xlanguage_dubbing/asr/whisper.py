@@ -19,6 +19,7 @@ from xlanguage_dubbing.config import (
     WHISPER_SAMPLE_RATE,
 )
 from xlanguage_dubbing.core.models import Segment
+from xlanguage_dubbing.lang_utils import speech_lang_code
 from xlanguage_dubbing.utils import PipelineError, print_step, run_cmd, which_or_raise
 
 
@@ -116,7 +117,7 @@ def whisper_transcribe(wav_path: Path) -> tuple[list[Segment], str]:
         whisper_cli,
         "--model", model_path,
         "--file", str(wav_path),
-        "--language", lang,
+        "--language", speech_lang_code(lang),
         "--threads", str(n_threads),
         "--vad",
         "--vad-model", vad_model_path,
@@ -266,7 +267,7 @@ def transcribe_short_audio(wav_path: Path, language: str = "") -> str:
         whisper_cli,
         "--model", model_path,
         "--file", str(tmp_wav),
-        "--language", lang,
+        "--language", speech_lang_code(lang),
         "--threads", "4",
         "--output-json",
         "--output-file", str(output_base),

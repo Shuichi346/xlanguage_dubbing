@@ -32,6 +32,7 @@ from xlanguage_dubbing.config import (
     TTS_SAMPLE_RATE,
 )
 from xlanguage_dubbing.core.models import Segment, TtsMeta
+from xlanguage_dubbing.lang_utils import speech_lang_code
 from xlanguage_dubbing.tts.reference import SpeakerReferenceCache
 from xlanguage_dubbing.utils import (
     PipelineError,
@@ -144,7 +145,7 @@ def omnivoice_synthesize(
         "text": text,
         "num_step": OMNIVOICE_NUM_STEP,
         "guidance_scale": OMNIVOICE_GUIDANCE_SCALE,
-        "language": language,
+        "language": speech_lang_code(language),
     }
 
     if instruct is not None:

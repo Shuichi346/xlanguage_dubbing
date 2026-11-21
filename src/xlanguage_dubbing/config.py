@@ -169,32 +169,17 @@ HF_AUTH_TOKEN = _env("HF_AUTH_TOKEN", "")
 PYANNOTE_MODEL = _env("PYANNOTE_MODEL", "pyannote/speaker-diarization-community-1")
 
 # =========================
-# CAT-Translate（日英特化翻訳）
+# PLaMo 3 Translate 8B (all supported language pairs)
 # =========================
 
-CAT_TRANSLATE_REPO = _env("CAT_TRANSLATE_REPO", "mradermacher/CAT-Translate-7b-GGUF")
-CAT_TRANSLATE_FILE = _env("CAT_TRANSLATE_FILE", "CAT-Translate-7b.Q6_K.gguf")
-CAT_TRANSLATE_N_GPU_LAYERS = _env_int("CAT_TRANSLATE_N_GPU_LAYERS", -1)
-CAT_TRANSLATE_N_CTX = _env_int("CAT_TRANSLATE_N_CTX", 4096)
-CAT_TRANSLATE_RETRIES = _env_int("CAT_TRANSLATE_RETRIES", 3)
-CAT_TRANSLATE_RETRY_BACKOFF_SEC = _env_float("CAT_TRANSLATE_RETRY_BACKOFF_SEC", 1.5)
-CAT_TRANSLATE_REPEAT_PENALTY = _env_float("CAT_TRANSLATE_REPEAT_PENALTY", 1.1)
-
-# =========================
-# TranslateGemma（多言語翻訳）
-# =========================
-
-TRANSLATEGEMMA_REPO = _env(
-    "TRANSLATEGEMMA_REPO", "mradermacher/translategemma-12b-it-GGUF"
-)
-TRANSLATEGEMMA_FILE = _env(
-    "TRANSLATEGEMMA_FILE", "translategemma-12b-it.Q6_K.gguf"
-)
-TRANSLATEGEMMA_N_GPU_LAYERS = _env_int("TRANSLATEGEMMA_N_GPU_LAYERS", -1)
-TRANSLATEGEMMA_N_CTX = _env_int("TRANSLATEGEMMA_N_CTX", 2048)
-TRANSLATEGEMMA_RETRIES = _env_int("TRANSLATEGEMMA_RETRIES", 3)
-TRANSLATEGEMMA_RETRY_BACKOFF_SEC = _env_float("TRANSLATEGEMMA_RETRY_BACKOFF_SEC", 1.5)
-TRANSLATEGEMMA_REPEAT_PENALTY = _env_float("TRANSLATEGEMMA_REPEAT_PENALTY", 1.1)
+PLAMO_TRANSLATE_REPO = "pfnet/plamo-3-translate-8b-GGUF"
+PLAMO_TRANSLATE_FILE = "plamo-3-translate-8b-Q4_K_M.gguf"
+PLAMO_TRANSLATE_SERVER_BIN = _env("PLAMO_TRANSLATE_SERVER_BIN", "llama-server")
+PLAMO_TRANSLATE_N_GPU_LAYERS = _env_int("PLAMO_TRANSLATE_N_GPU_LAYERS", -1)
+PLAMO_TRANSLATE_N_CTX = _env_int("PLAMO_TRANSLATE_N_CTX", 8192)
+PLAMO_TRANSLATE_RETRIES = _env_int("PLAMO_TRANSLATE_RETRIES", 3)
+PLAMO_TRANSLATE_RETRY_BACKOFF_SEC = _env_float("PLAMO_TRANSLATE_RETRY_BACKOFF_SEC", 1.5)
+PLAMO_TRANSLATE_REPEAT_PENALTY = _env_float("PLAMO_TRANSLATE_REPEAT_PENALTY", 1.0)
 
 # =========================
 # OmniVoice（ボイスクローン + 再生時間制御）

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-11-21
+
+### Changed
+
+- Unified every supported translation pair on the official `pfnet/plamo-3-translate-8b-GGUF` / `plamo-3-translate-8b-Q4_K_M.gguf` model with PFML3 prompts and greedy local inference through an automatically managed `llama-server`.
+- Stored the translation model under project-root `models/plamo-3-translate-8b-GGUF/` and added `PLAMO_TRANSLATE_SERVER_BIN` for the native executable.
+- Restricted source and target languages to PLaMo's 53 supported languages, preserving Simplified and Traditional Chinese separately and rejecting unsupported detected segment languages.
+- Isolated job checkpoints and final output names by translation settings, and validated source segment contents before resuming translations.
+
+### Removed
+
+- Removed CAT-Translate and TranslateGemma implementations, language-pair routing, and environment settings without compatibility aliases.
+- Removed the `llama-cpp-python` dependency in favor of the official native `llama.cpp` runtime with PLaMo tokenizer support.
+
 ## 2026-10-23
 
 ### Fixed

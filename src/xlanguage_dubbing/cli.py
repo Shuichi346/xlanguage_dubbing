@@ -26,9 +26,14 @@ from xlanguage_dubbing.config import (
     VIDEO_FOLDER,
 )
 from xlanguage_dubbing.core.pipeline import process_one_video
+from xlanguage_dubbing.lang_utils import normalize_lang_code, validate_translation_language
 from xlanguage_dubbing.segments.spacy_split import initialize_spacy
 from xlanguage_dubbing.servers.health import generate_start_script
-from xlanguage_dubbing.translation.cat_translate import CatTranslateClient
+from xlanguage_dubbing.translation.plamo import (
+    PlamoTranslateClient,
+    resolve_llama_server,
+    translation_namespace,
+)
 from xlanguage_dubbing.tts.reference import SpeakerReferenceCache
 from xlanguage_dubbing.utils import (
     PipelineError,
@@ -97,6 +102,10 @@ def _prompt_video_path() -> Path:
 
 def preflight_checks() -> None:
     """事前チェック。"""
+    validate_translation_language(OUTPUT_LANG)
+    if normalize_lang_code(INPUT_LANG) != "auto":
+        validate_translation_language(INPUT_LANG)
+    resolve_llama_server()
     which_or_raise("ffmpeg")
     which_or_raise("ffprobe")
     ensure_dir(TEMP_ROOT)
@@ -180,7 +189,7 @@ def list_videos(folder: Path) -> list[Path]:
 def _process_single_video(video_path: Path) -> int:
     """動画1本を処理する。"""
     print_step(f"単体モード: {video_path.name}")
-    client = CatTranslateClient()
+    client = PlamoTranslateClient()
     work_dir = _work_dir_for_video(video_path)
     ensure_dir(work_dir)
     ref_cache = SpeakerReferenceCache(work_dir / "speaker_refs")
@@ -201,7 +210,7 @@ def _process_single_video(video_path: Path) -> int:
 def _process_folder_videos(videos: list[Path]) -> int:
     """フォルダ内の動画を順次処理する。"""
     print_step(f"処理対象動画数: {len(videos)}")
-    client = CatTranslateClient()
+    client = PlamoTranslateClient()
 
     failed: list[Path] = []
     for idx, v in enumerate(videos, start=1):
@@ -237,6 +246,7 @@ def _work_dir_for_video(video_path: Path) -> Path:
         work_dir = TEMP_ROOT / f"{video_path.stem}_rawaudio"
     if get_asr_engine() == "nemo-speech":
         work_dir /= "nemo-speech"
+    work_dir /= translation_namespace()
     if ENABLE_VOICE_DESIGN:
         from xlanguage_dubbing.tts.voice_design import design_namespace
         work_dir = work_dir / "voice_design" / design_namespace()

@@ -144,9 +144,9 @@ class NemoSpeechTests(unittest.TestCase):
             for separated, base in ((True, "video"), (False, "video_rawaudio")):
                 with mock.patch.object(cli, "ENABLE_AUDIO_SEPARATION", separated):
                     with mock.patch.object(asr, "ASR_ENGINE", "nemo-speech"):
-                        self.assertEqual(cli._work_dir_for_video(Path("video.mp4")), Path("temp") / base / "nemo-speech")
+                        self.assertEqual(cli._work_dir_for_video(Path("video.mp4")), Path("temp") / base / "nemo-speech" / cli.translation_namespace())
                     with mock.patch.object(asr, "ASR_ENGINE", "whisper"):
-                        self.assertEqual(cli._work_dir_for_video(Path("video.mp4")), Path("temp") / base)
+                        self.assertEqual(cli._work_dir_for_video(Path("video.mp4")), Path("temp") / base / cli.translation_namespace())
 
     def test_pipeline_uses_nemo_speakers_and_correct_audio_for_references(self) -> None:
         # Stop at translation after exercising ASR, segment publication, and reference routing.

@@ -51,7 +51,9 @@ from xlanguage_dubbing.core.retime import build_retime_parts
 from xlanguage_dubbing.lang_utils import (
     detect_segments_language,
     get_lang_name,
-    select_translation_engine,
+    normalize_lang_code,
+    validate_translation_language,
+    validate_translation_languages,
 )
 from xlanguage_dubbing.omnivoice_tts import (
     load_tts_meta,
@@ -63,9 +65,9 @@ from xlanguage_dubbing.segments.spacy_split import (
     chunk_segments_for_spacy,
     split_segments_by_spacy_sentences,
 )
-from xlanguage_dubbing.translation.cat_translate import (
-    CatTranslateClient,
-    release_all_translation_models,
+from xlanguage_dubbing.translation.plamo import (
+    PlamoTranslateClient,
+    release_translation_model,
     translate_segments_resumable,
 )
 from xlanguage_dubbing.tts.reference import SpeakerReferenceCache
@@ -123,10 +125,13 @@ def _fill_detected_lang(segments: list, lang: str) -> list:
 
 def process_one_video(
     video_path: Path,
-    client: CatTranslateClient,
+    client: PlamoTranslateClient,
     ref_cache: SpeakerReferenceCache,
 ) -> None:
     """1つの動画を処理する。"""
+    validate_translation_language(OUTPUT_LANG)
+    if normalize_lang_code(INPUT_LANG) != "auto":
+        validate_translation_language(INPUT_LANG)
     print_step(f"=== 開始: {video_path} ===")
     print_step(f"  入力言語: {INPUT_LANG} → 出力言語: {OUTPUT_LANG}")
 
@@ -378,16 +383,25 @@ def process_one_video(
     if not segments_src:
         raise PipelineError("segments_src が空です。")
 
+    # Speech recognizers report generic Chinese; retain an explicitly selected script.
+    configured_source = normalize_lang_code(INPUT_LANG)
+    if configured_source in {"zh-hans", "zh-hant"}:
+        detected_lang = configured_source
+        segments_src = [
+            replace(segment, detected_lang=configured_source)
+            if normalize_lang_code(segment.detected_lang) in {"zh-hans", "zh-hant", ""}
+            else segment
+            for segment in segments_src
+        ]
+
     print_step(
         f"  検出言語: {detected_lang} ({get_lang_name(detected_lang)})"
     )
     _validate_tts_language_pair(detected_lang)
-    engine_name = select_translation_engine(detected_lang, OUTPUT_LANG)
-    print_step(
-        f"  翻訳エンジン: "
-        f"{'CAT-Translate' if engine_name == 'cat_translate' else 'TranslateGemma'} "
-        f"({detected_lang} → {OUTPUT_LANG})"
-    )
+    validate_translation_languages(detected_lang, OUTPUT_LANG)
+    for segment in segments_src:
+        validate_translation_languages(segment.detected_lang or detected_lang, OUTPUT_LANG)
+    print_step(f"  翻訳エンジン: PLaMo 3 Translate 8B ({detected_lang} → {OUTPUT_LANG})")
 
     # ===== 6. 話者リファレンス音声生成 =====
     if ENABLE_VOICE_DESIGN:
@@ -417,25 +431,14 @@ def process_one_video(
 
     # ===== 7. 翻訳 =====
     print_step("7. 翻訳（再開対応）")
-    if progress.step("translate_done") and seg_json_translated.exists():
-        print_step("   翻訳: 既に完了（再開）")
-        segments_translated = load_segments_json(seg_json_translated)
-        if len(segments_translated) != len(segments_src):
-            print_step("   注意: セグメント数不一致 → 翻訳やり直し")
-            segments_translated = translate_segments_resumable(
-                client, segments_src, seg_json_translated, progress,
-                detected_lang=detected_lang,
-            )
-    else:
+    try:
         segments_translated = translate_segments_resumable(
-            client, segments_src, seg_json_translated, progress,
-            detected_lang=detected_lang,
+            client, segments_src, seg_json_translated, progress, detected_lang=detected_lang,
         )
-
-    # 翻訳完了後、TTS 前に翻訳モデルを解放してメモリを確保する
-    print_step("7.5. 翻訳モデルを解放（TTS 用メモリ確保）")
-    release_all_translation_models()
-    force_memory_cleanup()
+    finally:
+        print_step("7.5. 翻訳モデルを解放（TTS 用メモリ確保）")
+        release_translation_model()
+        force_memory_cleanup()
 
     tts_work_dir = work_dir
     if ENABLE_VOICE_DESIGN:
