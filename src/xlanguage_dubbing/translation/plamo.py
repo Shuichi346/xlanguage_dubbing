@@ -12,7 +12,7 @@ import socket
 import subprocess
 import tempfile
 import time
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import ProxyHandler, Request, build_opener
@@ -40,7 +40,13 @@ from xlanguage_dubbing.lang_utils import (
     validate_translation_language,
     validate_translation_languages,
 )
-from xlanguage_dubbing.utils import PipelineError, force_memory_cleanup, print_step
+from xlanguage_dubbing.utils import (
+    PipelineError,
+    atomic_write_json,
+    force_memory_cleanup,
+    load_json_if_exists,
+    print_step,
+)
 
 
 class PlamoTranslateError(Exception):
@@ -427,6 +433,15 @@ def translate_segments_resumable(
     else:
         segments = [_new_segment_src_only(s) for s in segments_src]
 
+    record_dir = seg_json_path.with_suffix(".records")
+    if can_resume:
+        for segno, source in enumerate(segments_src, start=1):
+            record = load_json_if_exists(record_dir / f"{segno:05d}.json")
+            if isinstance(record, dict) and record.get("source") == asdict(_new_segment_src_only(source)):
+                text = record.get("translation")
+                if isinstance(text, str):
+                    segments[segno - 1] = replace(source, text_tgt=text)
+
     # Publish cleared source records before marking this checkpoint as PLaMo-owned.
     # A crash before the first inference must not legitimize a previous model's text.
     save_segments_json_atomic(segments, seg_json_path)
@@ -465,11 +480,14 @@ def translate_segments_resumable(
             client, seg.text_src, seg_source_lang, target_lang
         )
         segments[segno - 1] = replace(seg, text_tgt=tgt)
-        save_segments_json_atomic(segments, seg_json_path)
+        atomic_write_json(record_dir / f"{segno:05d}.json", {
+            "source": asdict(_new_segment_src_only(seg)), "translation": tgt,
+        })
         progress.set_step("translate_done", False)
         progress.set_artifact("segments_translated_json", str(seg_json_path))
         progress.save()
 
     progress.set_step("translate_done", True)
+    save_segments_json_atomic(segments, seg_json_path)
     progress.save()
     return segments

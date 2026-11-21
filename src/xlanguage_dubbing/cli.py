@@ -20,11 +20,13 @@ from xlanguage_dubbing.config import (
     IRODORI_TTS_BASE_URL,
     IRODORI_TTS_DIR,
     OUTPUT_LANG,
+    OUTPUT_SUFFIX,
     TEMP_ROOT,
     TTS_ENGINE,
     VIDEO_EXTS,
     VIDEO_FOLDER,
 )
+from xlanguage_dubbing.core.cache import completion_path, input_namespace
 from xlanguage_dubbing.core.pipeline import process_one_video
 from xlanguage_dubbing.lang_utils import normalize_lang_code, validate_translation_language
 from xlanguage_dubbing.segments.spacy_split import initialize_spacy
@@ -183,6 +185,8 @@ def list_videos(folder: Path) -> list[Path]:
     return sorted(
         p for p in folder.rglob("*")
         if p.is_file() and p.suffix.lower() in VIDEO_EXTS
+        and not (OUTPUT_SUFFIX and p.name.endswith(OUTPUT_SUFFIX))
+        and not completion_path(p).exists()
     )
 
 
@@ -247,6 +251,7 @@ def _work_dir_for_video(video_path: Path) -> Path:
     if get_asr_engine() == "nemo-speech":
         work_dir /= "nemo-speech"
     work_dir /= translation_namespace()
+    work_dir /= input_namespace(video_path)
     if ENABLE_VOICE_DESIGN:
         from xlanguage_dubbing.tts.voice_design import design_namespace
         work_dir = work_dir / "voice_design" / design_namespace()

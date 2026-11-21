@@ -101,6 +101,8 @@ brew install ffmpeg cmake uv llama.cpp
 
 Linux, Windows, and CUDA workflows are not supported by this repository configuration.
 
+Dependency resolution targets macOS arm64. The project pins PyTorch `2.15.0`, TorchAudio `2.11.1`, TorchCodec `0.17.0`, and Demucs `4.1.0`; native decoding and synthetic media checks passed with FFmpeg `9.0.2`. Keep FFmpeg 9. MLX Audio stays pinned to `0.6.5` because newer releases require `fsspec>=2026.6.0`, conflicting with VoxCPM2's `datasets<4` requirement of `fsspec<=2025.3.0`. Irodori uses its separate pinned server environment described below.
+
 ## Installation
 
 ```bash
@@ -153,6 +155,8 @@ uv run xlanguage-dubbing --generate-script
 ```
 
 When `TTS_ENGINE=irodori`, the generated `start_servers.sh` starts Irodori-TTS-Server with the configured host and port. OmniVoice and VoxCPM2 run in-process. Translation starts and stops its own local `llama-server` automatically; no manual translation-server launch is needed.
+
+Irodori binds to `127.0.0.1` by default. Pipeline-owned startup and generated launchers require `IRODORI_TTS_API_KEY` for a non-loopback bind; the same key is sent with API requests. The Irodori launcher has owner-only permissions (`0700`) and includes the configured key when set. Regenerate it with `uv run xlanguage-dubbing --generate-script` after changing configuration. Existing launchers and externally managed servers are not updated automatically.
 
 ## Configuration
 
@@ -223,10 +227,12 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 | `OMNIVOICE_*` | OmniVoice model, dtype, sampling, duration, reference, and retry settings. |
 | `VOXCPM2_*` | VoxCPM2 model, controllable cloning, duration, reference, and retry settings. |
 | `IRODORI_TTS_BASE_URL` | Irodori-TTS-Server base URL. |
+| `IRODORI_TTS_SERVER_HOST` | Server bind address, default `127.0.0.1`; non-loopback startup requires an API key. |
+| `IRODORI_TTS_SERVER_PORT` | Server port, default `8088`. |
 | `IRODORI_TTS_DIR` | Local server-fork checkout, default `./Irodori-TTS-Server-nonWatermark`. |
 | `IRODORI_TTS_AUTO_START` | Start Irodori-TTS-Server automatically when it is not already healthy. |
 | `IRODORI_TTS_START_COMMAND` | Optional custom server start command. |
-| `IRODORI_TTS_API_KEY` | Optional API key sent to Irodori-TTS-Server. |
+| `IRODORI_TTS_API_KEY` | API key sent to Irodori-TTS-Server; required for non-loopback pipeline-owned startup and generated launchers. |
 | `IRODORI_HF_CHECKPOINT` | Hugging Face checkpoint used by Irodori-TTS-Server, default `Aratako/Irodori-TTS-v4.1-Small-MF`. |
 | `IRODORI_CODEC_REPO` | DACVAE codec used for Irodori reference latent generation and server decoding, default `Aratako/Semantic-DACVAE-Japanese-32dim`. |
 | `IRODORI_MODEL_DEVICE` | Device used by the Irodori model, default `cpu`. Due to a PyTorch bug, `mps` may cause increased memory usage — be cautious of processing load. |
@@ -302,7 +308,7 @@ Age/gender estimation downloads the [official audEERING 24-layer model](https://
 
 VoxCPM2 uses a voice-description prefix, and Irodori uses Caption only to generate the initial reference. OmniVoice selects supported gender/age attributes with moderate pitch. Japanese and English are supported with VoxCPM2/OmniVoice; Irodori v4.1 Small MF remains Japanese-only. Each sample reads the fixed weather/station/blue-roof passage in the target language. Subsequent cloning uses only the generated reference audio or its cached Irodori latent; model weights are not fine-tuned.
 
-Designed voices are saved under the translation namespace's `voice_design/<engine>_<language>_<settings>/speaker_refs/` directory. Source text recognition and translation are isolated there too. Outputs include a `_voice_design_...` marker, so completed original-voice outputs do not prevent this mode from running. Valid voices persist across restarts, including fallback male voices after estimator installation; change `VOICE_DESIGN_SEED` to create a new voice set. Corrupt references are rebuilt individually, and rendering uses reference fingerprints to avoid mixing previous voices. For Irodori, only a server started by this pipeline is stopped before the short-lived codec worker; externally managed servers remain under their owner's control.
+Designed voices are saved under the translation namespace's `input_<20-character-hash>/voice_design/<engine>_<language>_<settings>/speaker_refs/` directory. Source text recognition and translation are isolated there too. Outputs include a `_voice_design_...` marker, so completed original-voice outputs do not prevent this mode from running. Valid voices persist across restarts, including fallback male voices after estimator installation; change `VOICE_DESIGN_SEED` to create a new voice set. Corrupt references are rebuilt individually, and rendering uses reference fingerprints to avoid mixing previous voices. For Irodori, only a server started by this pipeline is stopped before the short-lived codec worker; externally managed servers remain under their owner's control.
 
 ### Translation
 
@@ -320,26 +326,30 @@ Chinese distinguishes Simplified `zh-hans` from Traditional `zh-hant`. `zh` and 
 
 ## Resume and Outputs
 
-Final videos are written next to the source. The default `OUTPUT_SUFFIX` is `_xlDub.mp4`. Every mode includes the translation namespace `plamo3_<target-language>_<12-character-hash>`.
+Final videos are written next to the source. The default `OUTPUT_SUFFIX` is `_xlDub.mp4`. Every mode includes the translation namespace `plamo3_<target-language>_<12-character-hash>` and a 16-character identity for the source, active analysis, synthesis, and effective mix/output settings.
 
 | Mode | Final filename |
 |---|---|
-| OmniVoice/VoxCPM2 original voice | `<source-stem>_<translation-namespace><OUTPUT_SUFFIX>` |
-| Irodori original voice | `<source-stem>_<translation-namespace>_irodori_<settings-hash><OUTPUT_SUFFIX>` |
-| Voice design | `<source-stem>_<translation-namespace>_voice_design_<engine>_<language>_<settings-hash><OUTPUT_SUFFIX>` |
+| OmniVoice/VoxCPM2 original voice | `<source-stem>_<translation-namespace>_<16-character-identity><OUTPUT_SUFFIX>` |
+| Irodori original voice | `<source-stem>_<translation-namespace>_<16-character-identity>_irodori_<settings-hash><OUTPUT_SUFFIX>` |
+| Voice design | `<source-stem>_<translation-namespace>_<16-character-identity>_voice_design_<engine>_<language>_<settings-hash><OUTPUT_SUFFIX>` |
 
 Temporary directory bases remain separated by audio source:
 
 - `temp/<video>` with Demucs enabled.
 - `temp/<video>_rawaudio` with Demucs disabled.
 
-NeMo adds `nemo-speech/` under that base. Every ASR mode then adds `<translation-namespace>/`; voice design adds another `voice_design/<engine>_<language>_<settings-hash>/` beneath it.
+NeMo adds `nemo-speech/` under that base. Every ASR mode then adds `<translation-namespace>/input_<20-character-hash>/`; voice design adds another `voice_design/<engine>_<language>_<settings-hash>/` beneath it. The input hash binds the resolved source path, content, file metadata, and active ASR/segmentation/separation settings, keeping changed or same-named inputs separate. Previous work directories and outputs remain intact.
 
-The resulting work directory holds `progress.json`, `segments_src.json`, `segments_translated.json`, `subtitles_src.srt`, and `speaker_refs/`. NeMo also saves its validated CLI output as `nemo_speech.json` there. OmniVoice/VoxCPM2 original-voice jobs keep `seg_audio/`, `tts_meta.json`, and `retime/` in the same directory. Irodori original-voice and voice-design jobs separate TTS/retime artifacts under `render/<fingerprint>/`, including translated lines, synthesis settings, and reference audio or latent contents in the fingerprint. Irodori settings also include the server's `uv.lock` hash.
+The resulting work directory holds `progress.json`, `segments_src.json`, `segments_translated.json`, `subtitles_src.srt`, and `speaker_refs/`. NeMo also saves its validated CLI output as `nemo_speech.json` there. Translation saves atomic, source-bound per-segment checkpoints in `segments_translated.records/` and writes the aggregate JSON on completion.
+
+Every TTS engine, in both original-voice and voice-design modes, stores `seg_audio/`, per-utterance `tts_records/`, and aggregate `tts_meta.json` under `render/<fingerprint>/`. Render fingerprints include translated lines and timing, effective synthesis settings, and selected reference audio/latent contents or reference text as applicable. Irodori settings also include the server's `uv.lock` hash. Retimed tracks live under that render directory's `retime/<parts-and-cadence-fingerprint>/`, so changed individual speech durations cannot reuse an old joined video even when the total duration is unchanged.
 
 The translation namespace includes the model, prompt protocol, configured source language, target language, context length, and repetition penalty. Earlier translation-model checkpoints and final videos are not reused; the new work directory starts from ASR. Changing these translation settings selects another directory and output name. Translation resume also compares source text, timing, speakers, and languages.
 
-Rerunning with the same settings resumes completed work when `progress.json` matches the source video's size and modification time. To force a full rerun for one configuration, remove its work directory and final output file.
+Resume validates source and cache identities instead of trusting file existence alone. A completed MP4 is skipped only with a matching completion manifest: `example.mp4` uses `example.complete.json`. The manifest checks the input, effective settings, output signature, and retained references; intentional `KEEP_TEMP=false` cleanup still allows completed-output skips. Folder scans exclude generated outputs from future dubbing inputs.
+
+Media is staged and validated before atomic publication. Missing, failed, or corrupt required TTS prevents completed-video publication; valid sibling utterances remain reusable on retry. To force a full rerun for one configuration while preserving earlier results, move its work directory, final video, and completion manifest outside the input and work trees before rerunning. Moving only the final video and manifest rebuilds the mux while retaining validated speech and retimed caches.
 
 ## Troubleshooting
 
@@ -395,7 +405,7 @@ If startup still fails, inspect:
 
 ### Output already exists
 
-If the target file already exists, the pipeline skips that source video. To regenerate the final mux, remove the exact final file for the current mode, including its Irodori or voice-design namespace where present. Cached speech and retimed tracks are still reused; removing the final video alone does not regenerate speech.
+An existing target is skipped only when its completion manifest matches; see [Resume and Outputs](#resume-and-outputs). To regenerate the final mux while preserving the old result, move the exact final video and its `.complete.json` manifest outside `VIDEO_FOLDER`, then rerun. Validated speech and retimed tracks are still reused. A missing or mismatched manifest triggers validation and rebuilding as needed.
 
 ## Development
 

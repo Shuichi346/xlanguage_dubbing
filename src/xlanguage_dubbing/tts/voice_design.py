@@ -12,6 +12,7 @@ import soundfile as sf
 
 from xlanguage_dubbing import config
 from xlanguage_dubbing.audio.ffmpeg import extract_audio_segment
+from xlanguage_dubbing.core.cache import fingerprint, input_namespace, output_settings
 from xlanguage_dubbing.core.models import Segment
 from xlanguage_dubbing.tts.age_gender import (
     HF_MODEL_ID,
@@ -78,8 +79,32 @@ def irodori_render_fingerprint(segments: list[Segment], cache: SpeakerReferenceC
         references[speaker] = _file_sha256(path) if path is not None else None
     return _json_sha256({
         "settings": irodori_synthesis_settings(),
+        "output": output_settings(),
         "references": references,
         "segments": [(s.speaker_id, s.start, s.end, s.text_tgt) for s in segments],
+    })
+
+
+def render_fingerprint(segments: list[Segment], cache: SpeakerReferenceCache) -> str:
+    """Bind original-voice renders to translated lines and selected references."""
+    if config.TTS_ENGINE.startswith("irodori"):
+        return irodori_render_fingerprint(segments, cache)
+    hashes: dict[str, str] = {}
+    references = []
+    for segno, segment in enumerate(segments, start=1):
+        path = cache.get_omnivoice_segment_reference_path(segno)
+        prompt = cache.get_omnivoice_segment_prompt_text(segno)
+        if path is None:
+            path = cache.get_omnivoice_reference_path(segment.speaker_id)
+            prompt = cache.get_omnivoice_prompt_text(segment.speaker_id)
+        key = str(path) if path is not None else ""
+        if path is not None and key not in hashes:
+            hashes[key] = _file_sha256(path)
+        references.append({"audio": hashes.get(key),
+                           "prompt": prompt if config.TTS_ENGINE == "omnivoice" else ""})
+    return fingerprint({
+        "output": output_settings(), "references": references,
+        "segments": [asdict(segment) for segment in segments],
     })
 
 
@@ -126,7 +151,8 @@ def output_path_for_video(video_path: Path) -> Path:
     elif config.TTS_ENGINE.startswith("irodori"):
         suffix = f"_irodori_{_json_sha256(irodori_synthesis_settings())[:12]}{suffix}"
     from xlanguage_dubbing.translation.plamo import translation_namespace
-    return video_path.with_name(video_path.stem + "_" + translation_namespace() + suffix)
+    identity = fingerprint({"input": input_namespace(video_path), "output": output_settings()})[:16]
+    return video_path.with_name(video_path.stem + "_" + translation_namespace() + "_" + identity + suffix)
 
 
 def _audio_duration(path: Path) -> float:

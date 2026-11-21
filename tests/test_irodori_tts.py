@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import json
+import os
+import shlex
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
+import numpy as np
+import soundfile as sf
+
 from xlanguage_dubbing import config, irodori_tts
 from xlanguage_dubbing.core import pipeline
-from xlanguage_dubbing.core.models import Segment
+from xlanguage_dubbing.core.models import Segment, TtsMeta
 from xlanguage_dubbing.servers import health
 from xlanguage_dubbing.tts.reference import SpeakerReferenceCache
 from xlanguage_dubbing.utils import PipelineError
@@ -131,6 +137,8 @@ class IrodoriTtsTests(unittest.TestCase):
             output_path = Path(temporary_directory) / "start_servers.sh"
             with (
                 mock.patch.object(health, "_is_irodori_tts", return_value=True),
+                mock.patch.multiple(health, IRODORI_TTS_NUM_STEPS=4,
+                                    IRODORI_TTS_SERVER_HOST="127.0.0.1", IRODORI_TTS_API_KEY=""),
                 mock.patch.object(
                     health,
                     "IRODORI_CODEC_REPO",
@@ -226,6 +234,126 @@ class IrodoriTtsTests(unittest.TestCase):
             irodori_tts.ensure_irodori_tts_server()
         start.assert_not_called()
 
+    def test_non_loopback_bind_requires_an_explicit_nonempty_key(self) -> None:
+        for host in ("127.0.0.1", "127.1.2.3", "::1", "[::1]", "localhost"):
+            health.validate_irodori_bind(host, "")
+        for host in ("0.0.0.0", "::", "192.168.1.10", "server.local", ""):
+            with self.subTest(host=host):
+                for key in ("", " "):
+                    with self.assertRaisesRegex(PipelineError, "API_KEY"):
+                        health.validate_irodori_bind(host, key)
+                health.validate_irodori_bind(host, "explicit-test-key")
+
+    def test_generated_script_round_trips_shell_characters_and_authentication(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            server = root / "server's $(touch directory-injected)"
+            server.mkdir()
+            binary = root / "bin"
+            binary.mkdir()
+            uv = binary / "uv"
+            uv.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, os, sys\n"
+                "print(json.dumps({'key': os.environ['IRODORI_API_KEY'], "
+                "'cwd': os.getcwd(), 'args': sys.argv[1:]}))\n",
+                encoding="utf-8",
+            )
+            uv.chmod(0o700)
+            key = "test' key $(touch key-injected) \"$HOME\""
+            script = root / "start_servers.sh"
+            script.write_text("old launcher")
+            script.chmod(0o755)
+            with (
+                mock.patch.object(health, "_is_irodori_tts", return_value=True),
+                mock.patch.multiple(
+                    health, IRODORI_TTS_DIR=server, IRODORI_TTS_SERVER_HOST="0.0.0.0",
+                    IRODORI_TTS_SERVER_PORT=8088, IRODORI_TTS_API_KEY=key,
+                ),
+            ):
+                health.generate_start_script(script)
+            self.assertEqual(script.stat().st_mode & 0o777, 0o700)
+            self.assertIn("export IRODORI_API_KEY=" + shlex.quote(key), script.read_text())
+            result = subprocess.run(
+                ["bash", str(script)], cwd=root,
+                env={**os.environ, "PATH": str(binary) + os.pathsep + os.environ.get("PATH", "")},
+                capture_output=True, text=True, check=True, timeout=10,
+            )
+            observed = json.loads(result.stdout)
+            self.assertEqual(observed["key"], key)
+            self.assertEqual(observed["cwd"], str(server.resolve()))
+            self.assertEqual(observed["args"][-4:], ["--host", "0.0.0.0", "--port", "8088"])
+            self.assertFalse((server / "key-injected").exists())
+            self.assertFalse((root / "directory-injected").exists())
+
+    def test_manual_start_rejects_unprotected_external_bind_before_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            script = Path(temporary_directory) / "start.sh"
+            with (
+                mock.patch.object(health, "_is_irodori_tts", return_value=True),
+                mock.patch.multiple(health, IRODORI_TTS_SERVER_HOST="0.0.0.0", IRODORI_TTS_API_KEY=""),
+                self.assertRaisesRegex(PipelineError, "API_KEY"),
+            ):
+                health.generate_start_script(script)
+            self.assertFalse(script.exists())
+
+    def test_auto_start_env_and_client_use_the_same_selected_key(self) -> None:
+        with (
+            mock.patch.dict(os.environ, {"IRODORI_API_KEY": "unrelated-old-key", "VIRTUAL_ENV": "old"}),
+            mock.patch.object(irodori_tts, "IRODORI_TTS_API_KEY", "selected-test-key"),
+        ):
+            self.assertEqual(irodori_tts._server_env()["IRODORI_API_KEY"], "selected-test-key")
+            self.assertNotIn("VIRTUAL_ENV", irodori_tts._server_env())
+            self.assertEqual(irodori_tts._auth_headers(), {"Authorization": "Bearer selected-test-key"})
+        with mock.patch.object(irodori_tts, "IRODORI_TTS_API_KEY", ""):
+            self.assertEqual(irodori_tts._server_env()["IRODORI_API_KEY"], "")
+            self.assertEqual(irodori_tts._auth_headers(), {})
+
+    def test_auto_start_rejects_unprotected_custom_host_arguments(self) -> None:
+        for arguments in (["--host", "0.0.0.0"], ["--host=::"]):
+            with tempfile.TemporaryDirectory() as temporary_directory:
+                with (
+                    mock.patch.multiple(
+                        irodori_tts, _SERVER_READY=False, IRODORI_TTS_AUTO_START=True,
+                        IRODORI_TTS_SERVER_HOST="127.0.0.1", IRODORI_TTS_API_KEY="",
+                        IRODORI_TTS_DIR=Path(temporary_directory),
+                    ),
+                    mock.patch.object(irodori_tts, "_request_json", side_effect=OSError("not running")),
+                    mock.patch.object(irodori_tts, "_select_start_command", return_value=["python", *arguments]),
+                    mock.patch.object(irodori_tts.subprocess, "Popen") as start,
+                    self.assertRaisesRegex(PipelineError, "API_KEY"),
+                ):
+                    irodori_tts.ensure_irodori_tts_server()
+                start.assert_not_called()
+
+    def test_externally_managed_server_is_used_without_starting_or_stopping_it(self) -> None:
+        with (
+            mock.patch.object(irodori_tts, "_SERVER_READY", False),
+            mock.patch.object(irodori_tts, "_request_json", return_value={
+                "model": {"hf_checkpoint": irodori_tts.IRODORI_HF_CHECKPOINT},
+            }),
+            mock.patch.object(irodori_tts.subprocess, "Popen") as start,
+            mock.patch.object(irodori_tts, "_stop_spawned_server") as stop,
+        ):
+            irodori_tts.ensure_irodori_tts_server()
+        start.assert_not_called()
+        stop.assert_not_called()
+
+    def test_pipeline_releases_owned_server_on_startup_and_generation_failure(self) -> None:
+        for startup_failure in (True, False):
+            with (
+                mock.patch.object(
+                    irodori_tts, "ensure_irodori_tts_server",
+                    side_effect=PipelineError("startup") if startup_failure else None,
+                ),
+                mock.patch.object(pipeline, "_run_tts_loop", side_effect=PipelineError("generation")),
+                mock.patch.object(irodori_tts, "release_irodori_tts_server") as release,
+                self.assertRaises(PipelineError),
+            ):
+                pipeline._run_tts_irodori([], Path("unused-audio"), Path("unused-work"),
+                                          _Progress(), mock.Mock())
+            release.assert_called_once()
+
     def test_ababcabc_generation_order_and_speaker_latent_reuse(self) -> None:
         calls = []
 
@@ -248,7 +376,10 @@ class IrodoriTtsTests(unittest.TestCase):
                         ),
                     )
                 )
-                return None
+                output = output_stub.with_suffix(".flac")
+                sf.write(output, np.zeros((config.TTS_SAMPLE_RATE // 10, config.TTS_CHANNELS)),
+                         config.TTS_SAMPLE_RATE, format="FLAC")
+                return TtsMeta(segno, str(output), 0.1)
 
             with (
                 mock.patch.object(irodori_tts, "ensure_irodori_tts_server"),

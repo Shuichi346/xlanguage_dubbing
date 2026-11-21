@@ -8,6 +8,7 @@ OUTPUT_LANG に合わせた言語で音声を生成する。
 from __future__ import annotations
 
 import gc
+import math
 import os
 import time
 from pathlib import Path
@@ -408,10 +409,13 @@ def load_tts_meta(path: Path) -> dict[int, TtsMeta]:
     for row in obj:
         if not isinstance(row, dict):
             continue
-        segno = int(row.get("segno", 0) or 0)
+        try:
+            segno = int(row.get("segno", 0) or 0)
+            dur = float(row.get("duration_sec", 0.0) or 0.0)
+        except (TypeError, ValueError, OverflowError):
+            continue
         flac_path = str(row.get("flac_path", "") or "")
-        dur = float(row.get("duration_sec", 0.0) or 0.0)
-        if segno <= 0 or not flac_path or dur <= 0:
+        if segno <= 0 or not flac_path or not math.isfinite(dur) or dur <= 0:
             continue
         out[segno] = TtsMeta(segno=segno, flac_path=flac_path, duration_sec=dur)
     return out

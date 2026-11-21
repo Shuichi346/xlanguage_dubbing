@@ -101,6 +101,8 @@ brew install ffmpeg cmake uv llama.cpp
 
 Linux・Windows・CUDA ワークフローはこのリポジトリ構成ではサポートされていません。
 
+依存関係の解決対象は macOS arm64 です。PyTorch `2.15.0`・TorchAudio `2.11.1`・TorchCodec `0.17.0`・Demucs `4.1.0` を固定し、FFmpeg `9.0.2` でネイティブデコードと合成メディアの検証を通過しています。FFmpeg 9 を維持してください。MLX Audio の新しい版が要求する `fsspec>=2026.6.0` と、VoxCPM2 が使う `datasets<4` の `fsspec<=2025.3.0` が競合するため、MLX Audio は `0.6.5` に固定しています。Irodori は後述する独立した固定環境で動作します。
+
 ## インストール
 
 ```bash
@@ -153,6 +155,8 @@ uv run xlanguage-dubbing --generate-script
 ```
 
 `TTS_ENGINE=irodori` の場合、生成された `start_servers.sh` は設定されたホストとポートで Irodori-TTS-Server を起動します。OmniVoiceとVoxCPM2はプロセス内で動作します。翻訳用のローカル `llama-server` はパイプラインが自動で起動・停止するため、手動起動は不要です。
+
+Irodori のデフォルトの待受先は `127.0.0.1` です。パイプラインや生成スクリプトからループバック以外で起動する場合は `IRODORI_TTS_API_KEY` が必須で、API リクエストにも同じキーを送信します。Irodori 用スクリプトの権限は所有者限定（`0700`）で、キーを設定した場合はその値も含まれます。設定変更後は `uv run xlanguage-dubbing --generate-script` で再生成してください。既存のスクリプトや外部で管理するサーバーは自動更新しません。
 
 ## 設定
 
@@ -223,10 +227,12 @@ uv run xlanguage-dubbing --generate-script
 | `OMNIVOICE_*` | OmniVoice のモデル・dtype・サンプリング・長さ・参照・リトライ設定。 |
 | `VOXCPM2_*` | VoxCPM2 のモデル・コントローラブルクローニング・長さ・参照・リトライ設定。 |
 | `IRODORI_TTS_BASE_URL` | Irodori-TTS-Server のベース URL。 |
+| `IRODORI_TTS_SERVER_HOST` | サーバーの待受先。デフォルトは `127.0.0.1`。ループバック以外での起動には API キーが必須です。 |
+| `IRODORI_TTS_SERVER_PORT` | サーバーのポート。デフォルトは `8088`。 |
 | `IRODORI_TTS_DIR` | ローカルのサーバーフォーク。デフォルトは `./Irodori-TTS-Server-nonWatermark`。 |
 | `IRODORI_TTS_AUTO_START` | サーバーが正常稼働していない場合に Irodori-TTS-Server を自動起動します。 |
 | `IRODORI_TTS_START_COMMAND` | オプションのカスタムサーバー起動コマンド。 |
-| `IRODORI_TTS_API_KEY` | Irodori-TTS-Server に送信するオプションの API キー。 |
+| `IRODORI_TTS_API_KEY` | Irodori-TTS-Server に送信する API キー。パイプラインや生成スクリプトからループバック以外で起動する場合は必須です。 |
 | `IRODORI_HF_CHECKPOINT` | Irodori-TTS-Server が使う Hugging Face チェックポイント。デフォルトは `Aratako/Irodori-TTS-v4.1-Small-MF`。 |
 | `IRODORI_CODEC_REPO` | Irodori 参照潜在の生成とサーバーのデコードに使う DACVAE。デフォルトは `Aratako/Semantic-DACVAE-Japanese-32dim`。 |
 | `IRODORI_MODEL_DEVICE` | Irodori モデルの実行デバイス。デフォルトは `cpu`。Pytorchのバグにより`mps`はメモリー増加で処理負荷注意。 |
@@ -302,7 +308,7 @@ AGE_GENDER_MODEL_DIR=./models/age-gender
 
 VoxCPM2は声の説明文、Irodoriは初回だけCaptionを使用します。OmniVoiceは男女・青年／中年・普通の声高を属性から選択します。翻訳先は日本語・英語に限定され、Irodori v4.1 Small MFは日本語のみ対応します。ご指定の天気・駅前・青い屋根の文章を翻訳先言語で読み上げ、その生成音声またはIrodori参照潜在を以後のクローンに使います。モデルの重みを追加学習する方式ではありません。
 
-生成声と途中結果は、翻訳設定別ディレクトリの `voice_design/<engine>_<language>_<settings>/` 以下に保存します。出力動画にも `_voice_design_...` が付くため、従来方式の完成動画があっても実行できます。有効な生成声は再開時に再利用されます。推定モデル追加前に作った男性の代替音声も維持するので、声を作り直す場合は `VOICE_DESIGN_SEED` を変更してください。破損した参照音声だけを再生成し、参照音声の指紋でTTS・リタイム結果を分けます。Irodoriでは短命のコーデック処理の前に、このパイプライン自身が起動したサーバーだけを停止します。外部で管理するサーバーは停止しません。
+生成声と途中結果は、翻訳設定別ディレクトリの `input_<20桁ハッシュ>/voice_design/<engine>_<language>_<settings>/` 以下に保存します。出力動画にも `_voice_design_...` が付くため、従来方式の完成動画があっても実行できます。有効な生成声は再開時に再利用されます。推定モデル追加前に作った男性の代替音声も維持するので、声を作り直す場合は `VOICE_DESIGN_SEED` を変更してください。破損した参照音声だけを再生成し、参照音声の指紋でTTS・リタイム結果を分けます。Irodoriでは短命のコーデック処理の前に、このパイプライン自身が起動したサーバーだけを停止します。外部で管理するサーバーは停止しません。
 
 ### 翻訳
 
@@ -320,26 +326,30 @@ sr sw ta te th tl ur uz vi
 
 ## 再開と出力
 
-最終動画はソース動画と同じ場所に出力します。`OUTPUT_SUFFIX` のデフォルトは `_xlDub.mp4` です。全モードで翻訳設定の識別子 `plamo3_<出力言語>_<12桁ハッシュ>` を付けます。
+最終動画はソース動画と同じ場所に出力します。`OUTPUT_SUFFIX` のデフォルトは `_xlDub.mp4` です。全モードで翻訳設定の識別子 `plamo3_<出力言語>_<12桁ハッシュ>` と、入力・有効な解析設定・音声生成設定・合成／出力設定から決まる16桁の識別子を付けます。
 
 | モード | 最終ファイル名 |
 |---|---|
-| OmniVoice／VoxCPM2 元音声クローン | `<ソースファイル名>_<翻訳識別子><OUTPUT_SUFFIX>` |
-| Irodori 元音声クローン | `<ソースファイル名>_<翻訳識別子>_irodori_<設定ハッシュ><OUTPUT_SUFFIX>` |
-| ボイスデザイン | `<ソースファイル名>_<翻訳識別子>_voice_design_<エンジン>_<言語>_<設定ハッシュ><OUTPUT_SUFFIX>` |
+| OmniVoice／VoxCPM2 元音声クローン | `<拡張子なしソース名>_<翻訳識別子>_<16桁識別子><OUTPUT_SUFFIX>` |
+| Irodori 元音声クローン | `<拡張子なしソース名>_<翻訳識別子>_<16桁識別子>_irodori_<設定ハッシュ><OUTPUT_SUFFIX>` |
+| ボイスデザイン | `<拡張子なしソース名>_<翻訳識別子>_<16桁識別子>_voice_design_<エンジン>_<言語>_<設定ハッシュ><OUTPUT_SUFFIX>` |
 
 一時ディレクトリの基点は音声ソースモードによって分離します。
 
 - Demucs有効：`temp/<video>`
 - Demucs無効：`temp/<video>_rawaudio`
 
-NeMoでは基点の下に `nemo-speech/` を追加します。その下、または他のASRの基点の下に `<翻訳識別子>/` を追加し、ボイスデザインではさらに `voice_design/<エンジン>_<言語>_<設定ハッシュ>/` を追加します。
+NeMoでは基点の下に `nemo-speech/` を追加します。その下、または他のASRの基点の下に `<翻訳識別子>/input_<20桁ハッシュ>/` を追加し、ボイスデザインではさらに `voice_design/<エンジン>_<言語>_<設定ハッシュ>/` を追加します。入力ハッシュには解決済みのソースパス・内容・ファイル情報と、有効なASR・セグメント化・音声分離設定を含めます。同名の別動画や内容を変更した動画は別の保存先になり、以前の作業ディレクトリと出力は維持します。
 
-この作業ディレクトリに `progress.json`・`segments_src.json`・`segments_translated.json`・`subtitles_src.srt`・`speaker_refs/` を保存します。NeMoの検証済みCLI出力 `nemo_speech.json` もここに保存します。OmniVoice／VoxCPM2の元音声クローンでは、`seg_audio/`・`tts_meta.json`・`retime/` も同じ場所に保存します。Irodoriの元音声クローンとボイスデザインでは、TTS・リタイム結果を `render/<指紋>/` に分け、翻訳文・生成設定・参照音声または参照潜在の内容から指紋を作ります。Irodoriの設定指紋にはサーバーの `uv.lock` ハッシュも含まれます。
+この作業ディレクトリに `progress.json`・`segments_src.json`・`segments_translated.json`・`subtitles_src.srt`・`speaker_refs/` を保存します。NeMoの検証済みCLI出力 `nemo_speech.json` もここに保存します。翻訳は元セグメントに紐付く途中結果を `segments_translated.records/` に1件ずつアトミックに保存し、完了時に集約JSONを書き出します。
+
+全TTSエンジンの元音声クローン・ボイスデザインで、`render/<指紋>/` の下に `seg_audio/`・発話別の `tts_records/`・集約した `tts_meta.json` を保存します。指紋には翻訳文・時刻・有効な生成設定と、使用する参照音声／潜在の内容や参照テキストを含めます。Irodoriの設定指紋にはサーバーの `uv.lock` ハッシュも含まれます。リタイム結果はその下の `retime/<パーツとフレーム周期の指紋>/` に分けるため、合計時間が同じでも個々の発話時間が変われば古い結合動画を再利用しません。
 
 翻訳識別子はモデル・プロンプト形式・入力言語設定・出力言語・コンテキスト長・繰り返しペナルティから決まります。旧翻訳モデルの途中結果・完成動画は再利用せず、新しい作業ディレクトリでASRから実行します。翻訳設定を変更すると別の保存先と出力名になります。再開時には翻訳キャッシュの元文・時刻・話者・言語も照合します。
 
-同じ設定で再実行すると、`progress.json` の動画サイズと更新日時が一致する完了済み作業を再利用します。特定の動画を最初からやり直す場合は、該当する設定の作業ディレクトリと最終出力ファイルを削除してください。
+再開時はファイルの存在だけでなく、入力とキャッシュの識別情報を検証します。完成MP4をスキップするには、一致する完了マニフェストが必要です。`example.mp4` の場合は `example.complete.json` です。入力・有効な設定・出力ファイルの署名と、保持されている参照を照合します。`KEEP_TEMP=false` で意図的に一時ファイルを削除した後も、完成動画のスキップに対応します。フォルダースキャンでは生成済み出力を次の吹き替え対象から除外します。
+
+メディアは一時保存先で検証してからアトミックに公開します。必須のTTS音声が未生成・失敗・破損した場合は完成動画を公開せず、成功済みの他の発話を保持して再試行できます。以前の結果を残して最初からやり直すには、該当する作業ディレクトリ・最終動画・完了マニフェストを入力と作業領域の外へ移してから再実行してください。最終動画とマニフェストだけを移す場合は、検証済みの音声・リタイム結果を再利用して最終合成をやり直します。
 
 ## トラブルシューティング
 
@@ -395,7 +405,7 @@ bash scripts/setup_irodori.sh
 
 ### 出力がすでに存在する
 
-ターゲットファイルがすでに存在する場合、パイプラインはそのソース動画をスキップします。最終動画の合成をやり直す場合は、現在のモードに対応する完成ファイルを削除してください。Irodori やボイスデザインでは設定ごとの識別子も含む名前です。完成動画だけを削除しても、生成音声やリタイム済みのキャッシュは再利用されます。
+既存の動画は完了マニフェストが一致する場合だけスキップします（[再開と出力](#再開と出力)参照）。以前の結果を残して最終合成をやり直す場合は、該当する最終動画と `.complete.json` マニフェストを `VIDEO_FOLDER` の外へ移して再実行してください。検証済みの音声とリタイム結果は再利用します。マニフェストがない、または一致しない場合は検証し、必要な処理をやり直します。
 
 ## 開発
 

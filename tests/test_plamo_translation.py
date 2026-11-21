@@ -6,6 +6,9 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
+import numpy as np
+import soundfile as sf
+
 from xlanguage_dubbing import cli, config
 from xlanguage_dubbing.audio.segment_io import save_segments_json_atomic
 from xlanguage_dubbing.core import pipeline
@@ -177,7 +180,7 @@ class PlamoTranslationTests(unittest.TestCase):
                 ),
                 mock.patch.object(pipeline, "ffprobe_duration_sec", return_value=2),
                 mock.patch.object(pipeline, "ffprobe_has_audio", return_value=True),
-                mock.patch.object(pipeline, "extract_wav_for_whisper", side_effect=lambda _source, target: target.touch()),
+                mock.patch.object(pipeline, "extract_wav_for_whisper", side_effect=lambda _source, target: sf.write(target, np.zeros(160), 16000)),
                 mock.patch.object(pipeline, "get_asr_engine", return_value="nemo-speech"),
                 mock.patch.object(pipeline, "release_translation_model"),
                 mock.patch.object(pipeline, "force_memory_cleanup"),

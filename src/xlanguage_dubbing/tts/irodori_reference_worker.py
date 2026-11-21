@@ -103,7 +103,7 @@ def build_reference_latents(manifest: dict[str, Any]) -> None:
     import torch
 
     # This worker runs in the separate Irodori-TTS-Server environment.
-    from irodori_tts.codec import DACVAECodec  # ty: ignore[unresolved-import]
+    from irodori_tts.codec import DACVAECodec  # ty: ignore[import-not-found]
 
     codec_settings = manifest["codec"]
     if codec_settings.get("precision") != "fp32":

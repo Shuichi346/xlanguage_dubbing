@@ -8,6 +8,9 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest import mock
 
+import numpy as np
+import soundfile as sf
+
 from xlanguage_dubbing import asr, cli
 from xlanguage_dubbing.asr import nemo_speech as nemo
 from xlanguage_dubbing.core import pipeline
@@ -144,9 +147,9 @@ class NemoSpeechTests(unittest.TestCase):
             for separated, base in ((True, "video"), (False, "video_rawaudio")):
                 with mock.patch.object(cli, "ENABLE_AUDIO_SEPARATION", separated):
                     with mock.patch.object(asr, "ASR_ENGINE", "nemo-speech"):
-                        self.assertEqual(cli._work_dir_for_video(Path("video.mp4")), Path("temp") / base / "nemo-speech" / cli.translation_namespace())
+                        self.assertEqual(cli._work_dir_for_video(Path("video.mp4")), Path("temp") / base / "nemo-speech" / cli.translation_namespace() / cli.input_namespace(Path("video.mp4")))
                     with mock.patch.object(asr, "ASR_ENGINE", "whisper"):
-                        self.assertEqual(cli._work_dir_for_video(Path("video.mp4")), Path("temp") / base / cli.translation_namespace())
+                        self.assertEqual(cli._work_dir_for_video(Path("video.mp4")), Path("temp") / base / cli.translation_namespace() / cli.input_namespace(Path("video.mp4")))
 
     def test_pipeline_uses_nemo_speakers_and_correct_audio_for_references(self) -> None:
         # Stop at translation after exercising ASR, segment publication, and reference routing.
@@ -174,7 +177,7 @@ class NemoSpeechTests(unittest.TestCase):
                         "ffprobe_duration_sec": mock.Mock(return_value=10),
                         "ffprobe_has_audio": mock.Mock(return_value=True),
                         "separate_voice_and_background": mock.Mock(return_value=(vocals, background)),
-                        "extract_wav_for_whisper": mock.Mock(side_effect=lambda _source, target: target.touch()),
+                        "extract_wav_for_whisper": mock.Mock(side_effect=lambda _source, target: sf.write(target, np.zeros(160), 16000)),
                         "force_memory_cleanup": mock.Mock(),
                         "merge_segments": lambda value: value,
                         "chunk_segments_for_spacy": lambda value, **_kwargs: value,

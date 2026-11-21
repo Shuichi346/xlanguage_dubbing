@@ -8,6 +8,7 @@ from __future__ import annotations
 import gc
 import hashlib
 import json
+import math
 import os
 import subprocess
 import tempfile
@@ -26,8 +27,12 @@ from xlanguage_dubbing.config import (
     OMNIVOICE_REFERENCE_MIN_SEC,
     OMNIVOICE_REFERENCE_TARGET_SEC,
     TTS_ENGINE,
+    VOXCPM2_REFERENCE_MAX_SEC,
+    VOXCPM2_REFERENCE_MIN_SEC,
+    VOXCPM2_REFERENCE_TARGET_SEC,
 )
 from xlanguage_dubbing.core.models import DiarizationSegment, Segment
+from xlanguage_dubbing.lang_utils import speech_lang_code
 from xlanguage_dubbing.utils import (
     PipelineError,
     atomic_write_json,
@@ -45,6 +50,7 @@ _IRODORI_PRECISION = "fp32"
 _IRODORI_LATENT_DIM = 32
 _IRODORI_NORMALIZE_DB = -16.0
 _IRODORI_DETERMINISTIC_ENCODE = True
+_REFERENCE_SCHEMA_VERSION = 2
 
 
 class _PendingIrodoriReference(TypedDict):
@@ -130,12 +136,38 @@ class SpeakerReferenceCache:
         self._irodori_speaker_ref_durations.update(durations)
 
     def reload_speaker_references(self, speaker_ids: set[str]) -> None:
-        for speaker_id in speaker_ids:
-            ov_wav = self._cache_dir / f"ovref_{speaker_id}.wav"
-            if ov_wav.exists():
-                self._omnivoice_refs[speaker_id] = ov_wav
         self._load_omnivoice_prompt_meta()
+        self._omnivoice_refs = {
+            speaker: path for speaker, path in self._omnivoice_refs.items()
+            if speaker in speaker_ids
+        }
         self._load_omnivoice_segment_meta()
+
+    def _reference_limits(self) -> tuple[float, float, float]:
+        if self._tts_engine == "voxcpm2":
+            limits = (VOXCPM2_REFERENCE_MIN_SEC, VOXCPM2_REFERENCE_MAX_SEC,
+                      VOXCPM2_REFERENCE_TARGET_SEC)
+        else:
+            limits = (OMNIVOICE_REFERENCE_MIN_SEC, OMNIVOICE_REFERENCE_MAX_SEC,
+                      OMNIVOICE_REFERENCE_TARGET_SEC)
+        minimum, maximum, target = limits
+        if not all(math.isfinite(value) for value in limits) or not 0 < minimum <= target <= maximum:
+            raise PipelineError("参照音声の長さは 0 < MIN <= TARGET <= MAX で指定してください。")
+        return limits
+
+    def _reference_name(self, key: str, *, segment: bool = False) -> str:
+        if self._tts_engine == "voxcpm2":
+            prefix = "voxcpm2_seg_ref" if segment else "voxcpm2_ref"
+        else:
+            prefix = "ovseg_ref" if segment else "ovref"
+        return f"{prefix}_{key}.wav"
+
+    def _reference_fingerprint(self, source: dict, start: float, end: float, text: str) -> str:
+        return _json_sha256({
+            "schema": _REFERENCE_SCHEMA_VERSION, "engine": self._tts_engine,
+            "limits": self._reference_limits(), "source": source,
+            "start": start, "end": end, "text": text,
+        })
 
     def build_irodori_speaker_references(
         self,
@@ -265,58 +297,53 @@ class SpeakerReferenceCache:
         speakers: dict[str, list[DiarizationSegment]] = {}
         for dia in diarization:
             speakers.setdefault(dia.speaker, []).append(dia)
-
-        prompt_meta: dict[str, dict[str, str | float]] = {}
+        minimum, maximum, target = self._reference_limits()
+        source = _source_audio_identity(video_path) if speakers else {}
+        previous = load_json_if_exists(self._prompt_meta_path())
+        previous = previous if isinstance(previous, dict) else {}
+        prompt_meta: dict[str, dict] = {}
+        self._omnivoice_refs.clear()
+        self._omnivoice_prompt_texts.clear()
 
         for speaker_id, dia_segments in speakers.items():
-            out_wav = self._cache_dir / f"ovref_{speaker_id}.wav"
-            if out_wav.exists():
-                self._omnivoice_refs[speaker_id] = out_wav
-                if speaker_id in self._omnivoice_prompt_texts:
-                    continue
-
             best_seg = _select_best_reference_segment(
-                dia_segments,
-                min_sec=OMNIVOICE_REFERENCE_MIN_SEC,
-                max_sec=OMNIVOICE_REFERENCE_MAX_SEC,
-                target_sec=OMNIVOICE_REFERENCE_TARGET_SEC,
+                dia_segments, min_sec=minimum, max_sec=maximum, target_sec=target,
             )
             if best_seg is None:
                 print_step(f"  警告: リファレンスなし: {speaker_id}")
                 continue
-
-            if not out_wav.exists():
-                extract_audio_segment(
-                    video_path, out_wav,
-                    start=best_seg.start, end=best_seg.end,
-                    sample_rate=44100, channels=1,
-                )
-
-            if out_wav.exists() and out_wav.stat().st_size > 100:
+            out_wav = self._cache_dir / self._reference_name(_speaker_cache_key(speaker_id))
+            language = next((s.detected_lang for s in segments
+                             if s.speaker_id == speaker_id and s.detected_lang), "")
+            fingerprint = self._reference_fingerprint(
+                source, best_seg.start, best_seg.end,
+                _collect_reference_prompt_text(best_seg, segments) + "\n" + language,
+            )
+            info = previous.get(speaker_id)
+            if isinstance(info, dict) and _valid_reference_cache(out_wav, info, fingerprint=fingerprint):
+                prompt_meta[speaker_id] = info
                 self._omnivoice_refs[speaker_id] = out_wav
-                ref_dur = best_seg.end - best_seg.start
+                self._omnivoice_prompt_texts[speaker_id] = str(info.get("prompt_text", ""))
+                continue
 
-                prompt_text = transcribe_reference_audio(out_wav, language="")
-                if not prompt_text:
-                    prompt_text = _collect_reference_prompt_text(
-                        best_seg, segments
-                    )
-
-                self._omnivoice_prompt_texts[speaker_id] = prompt_text
-                prompt_meta[speaker_id] = {
-                    "prompt_text": prompt_text,
-                    "ref_start": best_seg.start,
-                    "ref_end": best_seg.end,
-                }
-                preview = prompt_text[:80] if prompt_text else "(empty)"
-                print_step(
-                    f"  {_reference_engine_label(self._tts_engine)} "
-                    f"リファレンス生成: {speaker_id} "
-                    f"({ref_dur:.1f}s) text='{preview}'"
-                )
+            _extract_reference_audio(video_path, out_wav, best_seg.start, best_seg.end)
+            if self._tts_engine == "voxcpm2":
+                prompt_text = ""
             else:
-                out_wav.unlink(missing_ok=True)
-
+                prompt_text = normalize_spaces(transcribe_reference_audio(
+                    out_wav, language=speech_lang_code(language),
+                ))
+                if not prompt_text:
+                    raise PipelineError(f"参照音声の文字起こしが空です: {speaker_id}")
+            self._omnivoice_refs[speaker_id] = out_wav
+            self._omnivoice_prompt_texts[speaker_id] = prompt_text
+            prompt_meta[speaker_id] = _reference_metadata(
+                out_wav, fingerprint, prompt_text, best_seg.start, best_seg.end,
+            )
+            print_step(
+                f"  {_reference_engine_label(self._tts_engine)} リファレンス生成: "
+                f"{speaker_id} ({best_seg.end - best_seg.start:.1f}s)"
+            )
         self._save_omnivoice_prompt_meta(prompt_meta)
 
     def build_omnivoice_segment_references(
@@ -324,114 +351,101 @@ class SpeakerReferenceCache:
         video_path: Path,
         segments: list[Segment],
     ) -> None:
+        from xlanguage_dubbing.asr import transcribe_reference_audio
+
         seg_ref_dir = self.segment_reference_dir
         ensure_dir(seg_ref_dir)
-
-        segment_meta: dict[str, dict[str, str | float]] = {}
+        _, maximum, _ = self._reference_limits()
+        source = _source_audio_identity(video_path) if segments else {}
+        previous = load_json_if_exists(self._segment_meta_path())
+        previous = previous if isinstance(previous, dict) else {}
+        segment_meta: dict[str, dict] = {}
+        self._omnivoice_segment_refs.clear()
+        self._omnivoice_segment_prompt_texts.clear()
 
         for segno, seg in enumerate(segments, start=1):
-            out_wav = seg_ref_dir / f"ovseg_ref_{segno:05d}.wav"
-
-            if (
-                out_wav.exists()
-                and segno in self._omnivoice_segment_prompt_texts
-            ):
-                self._omnivoice_segment_refs[segno] = out_wav
-                continue
-
             dur = seg.end - seg.start
             if dur < 0.3:
                 continue
-
-            effective_end = seg.start + min(dur, OMNIVOICE_REFERENCE_MAX_SEC)
-
-            if not out_wav.exists():
-                extract_audio_segment(
-                    video_path, out_wav,
-                    start=seg.start, end=effective_end,
-                    sample_rate=44100, channels=1,
-                )
-
-            if not out_wav.exists() or out_wav.stat().st_size <= 100:
-                out_wav.unlink(missing_ok=True)
+            effective_end = seg.start + min(dur, maximum)
+            out_wav = seg_ref_dir / self._reference_name(f"{segno:05d}", segment=True)
+            fingerprint = self._reference_fingerprint(
+                source, seg.start, effective_end,
+                normalize_spaces(seg.text_src) + "\n" + seg.detected_lang,
+            )
+            info = previous.get(str(segno))
+            if isinstance(info, dict) and _valid_reference_cache(out_wav, info, fingerprint=fingerprint):
+                segment_meta[str(segno)] = info
+                self._omnivoice_segment_refs[segno] = out_wav
+                self._omnivoice_segment_prompt_texts[segno] = str(info.get("prompt_text", ""))
                 continue
 
+            _extract_reference_audio(video_path, out_wav, seg.start, effective_end)
+            if self._tts_engine == "voxcpm2":
+                prompt_text = ""
+            elif effective_end < seg.end - 1e-6:
+                prompt_text = normalize_spaces(transcribe_reference_audio(
+                    out_wav, language=speech_lang_code(seg.detected_lang),
+                ))
+                if not prompt_text:
+                    raise PipelineError(f"切り出した参照音声の文字起こしが空です: segment {segno}")
+            else:
+                prompt_text = normalize_spaces(seg.text_src)
             self._omnivoice_segment_refs[segno] = out_wav
-
-            prompt_text = normalize_spaces(seg.text_src)
             self._omnivoice_segment_prompt_texts[segno] = prompt_text
-
-            segment_meta[str(segno)] = {
-                "prompt_text": prompt_text,
-                "ref_start": seg.start,
-                "ref_end": effective_end,
-            }
+            segment_meta[str(segno)] = _reference_metadata(
+                out_wav, fingerprint, prompt_text, seg.start, effective_end,
+            )
 
         self._save_omnivoice_segment_meta(segment_meta)
-
-        generated = len(self._omnivoice_segment_refs)
         print_step(
             f"  {_reference_engine_label(self._tts_engine)} "
-            "セグメント単位リファレンス生成: "
-            f"{generated}/{len(segments)} 件"
+            f"セグメント単位リファレンス生成: {len(self._omnivoice_segment_refs)}/{len(segments)} 件"
         )
 
     def reload_omnivoice_segment_references(self, total_segments: int) -> None:
-        seg_ref_dir = self.segment_reference_dir
-        if not seg_ref_dir.exists():
-            return
-        for segno in range(1, total_segments + 1):
-            wav_path = seg_ref_dir / f"ovseg_ref_{segno:05d}.wav"
-            if wav_path.exists():
-                self._omnivoice_segment_refs[segno] = wav_path
         self._load_omnivoice_segment_meta()
+        self._omnivoice_segment_refs = {
+            number: path for number, path in self._omnivoice_segment_refs.items()
+            if 1 <= number <= total_segments
+        }
 
     def _save_omnivoice_prompt_meta(self, meta):
-        meta_path = self._prompt_meta_path()
-        existing = load_json_if_exists(meta_path)
-        if isinstance(existing, dict):
-            existing.update(meta)
-            meta = existing
-        atomic_write_json(meta_path, meta)
+        atomic_write_json(self._prompt_meta_path(), meta)
 
     def _load_omnivoice_prompt_meta(self):
-        meta_path = self._prompt_meta_path()
-        obj = load_json_if_exists(meta_path)
+        self._omnivoice_refs.clear()
+        self._omnivoice_prompt_texts.clear()
+        obj = load_json_if_exists(self._prompt_meta_path())
         if not isinstance(obj, dict):
             return
         for speaker_id, info in obj.items():
-            if not isinstance(info, dict):
-                continue
-            self._omnivoice_prompt_texts[speaker_id] = str(
-                info.get("prompt_text", "") or ""
-            )
+            path = self._cache_dir / self._reference_name(_speaker_cache_key(speaker_id))
+            if _valid_reference_cache(path, info):
+                self._omnivoice_refs[speaker_id] = path
+                self._omnivoice_prompt_texts[speaker_id] = str(info.get("prompt_text", ""))
 
     def _prompt_meta_path(self) -> Path:
         return self._cache_dir / f"{self._tts_engine}_prompt_meta.json"
 
     def _save_omnivoice_segment_meta(self, meta):
-        meta_path = self._segment_meta_path()
-        existing = load_json_if_exists(meta_path)
-        if isinstance(existing, dict):
-            existing.update(meta)
-            meta = existing
-        atomic_write_json(meta_path, meta)
+        atomic_write_json(self._segment_meta_path(), meta)
 
     def _load_omnivoice_segment_meta(self):
-        meta_path = self._segment_meta_path()
-        obj = load_json_if_exists(meta_path)
+        self._omnivoice_segment_refs.clear()
+        self._omnivoice_segment_prompt_texts.clear()
+        obj = load_json_if_exists(self._segment_meta_path())
         if not isinstance(obj, dict):
             return
         for segno_str, info in obj.items():
-            if not isinstance(info, dict):
-                continue
             try:
                 segno = int(segno_str)
             except (ValueError, TypeError):
                 continue
-            self._omnivoice_segment_prompt_texts[segno] = str(
-                info.get("prompt_text", "") or ""
-            )
+            path = self.segment_reference_dir / self._reference_name(f"{segno:05d}", segment=True)
+            if _valid_reference_cache(path, info):
+                self._omnivoice_segment_refs[segno] = path
+                self._omnivoice_segment_prompt_texts[segno] = str(info.get("prompt_text", ""))
 
     def _segment_meta_path(self) -> Path:
         return self._cache_dir / f"{self._tts_engine}_segment_meta.json"
@@ -447,6 +461,50 @@ class SpeakerReferenceCache:
         gc.collect()
 
 
+def _reference_metadata(path: Path, fingerprint: str, text: str, start: float, end: float) -> dict:
+    return {
+        "schema": _REFERENCE_SCHEMA_VERSION, "fingerprint": fingerprint,
+        "audio_sha256": _file_sha256(path), "reference_wav": path.name,
+        "prompt_text": text, "ref_start": start, "ref_end": end,
+    }
+
+
+def _valid_reference_cache(path: Path, info: object, *, fingerprint: str | None = None) -> bool:
+    if not isinstance(info, dict) or info.get("schema") != _REFERENCE_SCHEMA_VERSION:
+        return False
+    if fingerprint is not None and info.get("fingerprint") != fingerprint:
+        return False
+    try:
+        import soundfile as sf
+
+        if info.get("audio_sha256") != _file_sha256(path):
+            return False
+        with sf.SoundFile(path) as source:
+            frames = sum(len(block) for block in source.blocks(blocksize=65536))
+            return frames == source.frames and frames > 0
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
+def _extract_reference_audio(media: Path, output: Path, start: float, end: float) -> None:
+    import soundfile as sf
+
+    with tempfile.TemporaryDirectory(prefix=".reference-", dir=output.parent) as temporary:
+        staged = Path(temporary) / "reference.wav"
+        extract_audio_segment(media, staged, start=start, end=end, sample_rate=44100, channels=1)
+        if not staged.is_file() or staged.stat().st_size <= 100:
+            raise PipelineError(f"参照音声の抽出に失敗しました: {output}")
+        try:
+            with sf.SoundFile(staged) as source:
+                decoded = sum(len(block) for block in source.blocks(blocksize=65536))
+                if (source.samplerate != 44100 or source.channels != 1
+                        or decoded != source.frames or decoded <= 0):
+                    raise ValueError("Invalid reference audio format or sample count")
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise PipelineError(f"参照音声のデコード検証に失敗しました: {output}") from exc
+        staged.replace(output)
+
+
 def _select_best_reference_segment(dia_segments, min_sec, max_sec, target_sec):
     candidates = []
     for seg in dia_segments:
@@ -459,7 +517,8 @@ def _select_best_reference_segment(dia_segments, min_sec, max_sec, target_sec):
         if dia_segments:
             longest = max(dia_segments, key=lambda s: s.end - s.start)
             if longest.end - longest.start >= 1.0:
-                return longest
+                return DiarizationSegment(longest.start, min(longest.end, longest.start + max_sec),
+                                          longest.speaker)
         return None
 
     def score(seg):

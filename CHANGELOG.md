@@ -2,17 +2,35 @@
 
 ## 2026-11-21
 
+### Fixed
+
+- Preserved contained, partially overlapping, and simultaneous utterances during retiming, sequencing speech without replaying overlapping source footage.
+- Corrected cumulative video-frame and background-audio sample drift, and validated joined track lengths before final muxing.
+- Prevented changed or same-named inputs, ASR settings, TTS engines, and synthesis settings from reusing unrelated extraction, reference, rendering, or completed-output caches.
+- Kept failed TTS utterances retryable and prevented incomplete dubbed videos from being published as completed outputs.
+- Published extracted audio, separated stems, generated speech, retimed media, and final videos atomically after validation; repaired corrupt caches on resume.
+- Matched clipped OmniVoice reference audio with its actual transcript and applied VoxCPM2-specific reference duration settings.
+- Required authentication for non-loopback Irodori startup, forwarded the API key consistently to generated launchers, and released pipeline-owned servers after synthesis or failures.
+
+### Added
+
+- Added source/content identities, completed-video manifests, input-bound translation records, and the implementation/verification checklist in `PLANS.md`.
+
 ### Changed
 
 - Unified every supported translation pair on the official `pfnet/plamo-3-translate-8b-GGUF` / `plamo-3-translate-8b-Q4_K_M.gguf` model with PFML3 prompts and greedy local inference through an automatically managed `llama-server`.
 - Stored the translation model under project-root `models/plamo-3-translate-8b-GGUF/` and added `PLAMO_TRANSLATE_SERVER_BIN` for the native executable.
 - Restricted source and target languages to PLaMo's 53 supported languages, preserving Simplified and Traditional Chinese separately and rejecting unsupported detected segment languages.
 - Isolated job checkpoints and final output names by translation settings, and validated source segment contents before resuming translations.
+- Kept FFmpeg 9 and installed compatible native PyTorch 2.15.0, TorchAudio 2.11.1, TorchCodec 0.17.0, and Demucs 4.1.0; updated NumPy, pyannote.audio, Accelerate, and Ruff. Pinned MLX Audio to 0.6.5 because newer releases conflict with VoxCPM2's `datasets`/`fsspec` requirements.
+- Replaced repeated full translation/TTS checkpoint rewrites with per-utterance records and final snapshots, and indexed speaker intervals instead of scanning every interval for every ASR segment.
+- Defaulted Irodori to localhost and restricted credential-bearing generated launchers to owner-only access. Folder scans excluded generated outputs from subsequent dubbing jobs.
 
 ### Removed
 
 - Removed CAT-Translate and TranslateGemma implementations, language-pair routing, and environment settings without compatibility aliases.
 - Removed the `llama-cpp-python` dependency in favor of the official native `llama.cpp` runtime with PLaMo tokenizer support.
+- Removed unused reference transcription from VoxCPM2's reference-only cloning path.
 
 ## 2026-10-23
 

@@ -7,6 +7,9 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
+import numpy as np
+import soundfile as sf
+
 from xlanguage_dubbing import cli, config, irodori_tts
 from xlanguage_dubbing.asr import nemo_speech
 from xlanguage_dubbing.core import pipeline
@@ -162,7 +165,7 @@ class VoiceDesignPipelineTests(unittest.TestCase):
                 "ENABLE_AUDIO_SEPARATION": False, "get_asr_engine": lambda: "nemo-speech",
                 "ffprobe_duration_sec": mock.Mock(return_value=10),
                 "ffprobe_has_audio": mock.Mock(return_value=True),
-                "extract_wav_for_whisper": lambda _source, target: target.touch(),
+                "extract_wav_for_whisper": lambda _source, target: sf.write(target, np.zeros(160), 16000),
                 "force_memory_cleanup": mock.Mock(), "release_translation_model": mock.Mock(),
             }.items():
                 stack.enter_context(mock.patch.object(pipeline, name, value))
@@ -174,7 +177,8 @@ class VoiceDesignPipelineTests(unittest.TestCase):
                 pipeline.process_one_video(video, mock.Mock(), cache)
             generated_stub = generate.call_args.args[1]
             expected = work / "render" / voice_design.irodori_render_fingerprint(segments, cache)[:20]
-            self.assertEqual(generated_stub, expected / "seg_audio" / "seg_00001")
+            self.assertEqual(generated_stub.parent.parent, expected / "seg_audio")
+            self.assertEqual(generated_stub.name, "seg_00001")
             self.assertTrue(legacy_flac.exists())
 
     def test_pipeline_designs_after_translation_release_using_correct_audio(self):
@@ -220,7 +224,7 @@ class VoiceDesignPipelineTests(unittest.TestCase):
                     "ffprobe_duration_sec": mock.Mock(return_value=10),
                     "ffprobe_has_audio": mock.Mock(return_value=True),
                     "separate_voice_and_background": mock.Mock(return_value=(vocals, background)),
-                    "extract_wav_for_whisper": lambda _source, target: target.touch(),
+                    "extract_wav_for_whisper": lambda _source, target: sf.write(target, np.zeros(160), 16000),
                     "force_memory_cleanup": mock.Mock(), "merge_segments": lambda value: value,
                     "chunk_segments_for_spacy": lambda value, **_kwargs: value,
                     "split_segments_by_spacy_sentences": lambda value: value,

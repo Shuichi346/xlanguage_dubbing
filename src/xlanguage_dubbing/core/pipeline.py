@@ -7,8 +7,11 @@
 from __future__ import annotations
 
 import shutil
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
+
+import soundfile as sf
 
 from xlanguage_dubbing.asr import get_asr_engine
 from xlanguage_dubbing.asr.whisper import extract_wav_for_whisper
@@ -21,8 +24,11 @@ from xlanguage_dubbing.audio.ffmpeg import (
     encode_video_chunk_ts,
     ffprobe_duration_sec,
     ffprobe_has_audio,
+    ffprobe_video_frame_rate,
     mux_retimed_video_with_tracks,
     remux_ts_to_mp4,
+    validate_audio_file,
+    validate_media_file,
 )
 from xlanguage_dubbing.audio.segment_io import (
     load_segments_json,
@@ -44,9 +50,17 @@ from xlanguage_dubbing.config import (
     SPACY_UNIT_MERGE_MAX_CHARS,
     SPACY_UNIT_MERGE_MAX_GAP_SEC,
     TTS_ENGINE,
+    TTS_SAMPLE_RATE,
+)
+from xlanguage_dubbing.core.cache import (
+    completed_output_is_valid,
+    fingerprint,
+    input_namespace,
+    output_settings,
+    publish_completion,
 )
 from xlanguage_dubbing.core.models import TtsMeta
-from xlanguage_dubbing.core.progress import ProgressStore
+from xlanguage_dubbing.core.progress import ProgressStore, video_signature
 from xlanguage_dubbing.core.retime import build_retime_parts
 from xlanguage_dubbing.lang_utils import (
     detect_segments_language,
@@ -73,6 +87,7 @@ from xlanguage_dubbing.translation.plamo import (
 from xlanguage_dubbing.tts.reference import SpeakerReferenceCache
 from xlanguage_dubbing.utils import (
     PipelineError,
+    atomic_write_json,
     ensure_dir,
     force_memory_cleanup,
     print_step,
@@ -139,7 +154,7 @@ def process_one_video(
     if ENABLE_VOICE_DESIGN:
         validate_voice_design(TTS_ENGINE, OUTPUT_LANG)
     out_path = output_path_for_video(video_path)
-    if out_path.exists():
+    if completed_output_is_valid(out_path, video_path, ref_cache.cache_dir):
         print_step(f"スキップ（出力済み）: {out_path}")
         return
 
@@ -147,7 +162,17 @@ def process_one_video(
     ensure_dir(work_dir)
 
     progress = ProgressStore(work_dir / "progress.json", video_path)
-    progress.load()
+    resumed = progress.load()
+    if not resumed and (
+        progress.path.exists() or any(work_dir.glob("audio_*.wav"))
+        or (work_dir / "demucs").exists() or (work_dir / "segments_src.json").exists()
+    ):
+        # Preserve legacy/mismatched artifacts, but never use them for a new input.
+        work_dir /= input_namespace(video_path)
+        ensure_dir(work_dir)
+        ref_cache = SpeakerReferenceCache(work_dir / "speaker_refs")
+        progress = ProgressStore(work_dir / "progress.json", video_path)
+        progress.load()
     progress.save()
 
     wav_whisper = work_dir / (
@@ -226,10 +251,15 @@ def process_one_video(
         progress.save()
 
     # ===== 1.5. 音声抽出 =====
-    if not wav_whisper.exists():
+    if not validate_audio_file(wav_whisper, sample_rate=16000, channels=1):
         source_label = "分離済み音声" if ENABLE_AUDIO_SEPARATION else "元音声"
         print_step(f"1.5. {source_label}からASR用wavを作成（16kHz mono）")
-        extract_wav_for_whisper(voice_audio_path, wav_whisper)
+        with TemporaryDirectory(prefix=".asr-audio-", dir=work_dir) as directory:
+            staged = Path(directory) / wav_whisper.name
+            extract_wav_for_whisper(voice_audio_path, staged)
+            if not validate_audio_file(staged, sample_rate=16000, channels=1):
+                raise PipelineError("ASR用の抽出音声をデコードできません。")
+            staged.replace(wav_whisper)
     else:
         print_step("1.5. 既存のASR用wavを利用")
 
@@ -447,12 +477,13 @@ def process_one_video(
         voice_fingerprint = build_designed_references(voice_audio_path, segments_src, ref_cache)
         render_fingerprint = _json_sha256({
             "voices": voice_fingerprint,
+            "output": output_settings(),
             "segments": [(s.speaker_id, s.start, s.end, s.text_tgt) for s in segments_translated],
         })
         tts_work_dir = work_dir / "render" / render_fingerprint[:20]
-    elif _is_irodori_tts():
-        from xlanguage_dubbing.tts.voice_design import irodori_render_fingerprint
-        tts_work_dir = work_dir / "render" / irodori_render_fingerprint(
+    else:
+        from xlanguage_dubbing.tts.voice_design import render_fingerprint
+        tts_work_dir = work_dir / "render" / render_fingerprint(
             segments_translated, ref_cache
         )[:20]
 
@@ -485,6 +516,20 @@ def process_one_video(
     parts, new_total_dur = build_retime_parts(
         segments_translated, tts_meta, video_dur
     )
+    frame_rate = ffprobe_video_frame_rate(video_path)
+    frame_counts: list[int] = []
+    sample_counts: list[int] = []
+    elapsed = 0.0
+    frames_used = 0
+    samples_used = 0
+    for part in parts:
+        elapsed += part.out_duration
+        frame_count = max(1, round(elapsed * frame_rate) - frames_used)
+        sample_count = max(1, round(elapsed * TTS_SAMPLE_RATE) - samples_used)
+        frame_counts.append(frame_count)
+        sample_counts.append(sample_count)
+        frames_used += frame_count
+        samples_used += sample_count
     progress.set_artifact("retimed_total_duration_sec", new_total_dur)
     progress.save()
 
@@ -493,7 +538,9 @@ def process_one_video(
     )
     print_step(f"   パート数: {len(parts)}")
 
-    retime_dir = tts_work_dir / "retime"
+    retime_dir = tts_work_dir / "retime" / fingerprint({
+        "parts": [asdict(part) for part in parts], "frame_rate": frame_rate,
+    })[:20]
     video_chunk_dir = retime_dir / "video_chunks"
     dubbed_chunk_dir = retime_dir / "dubbed_chunks"
     orig_chunk_dir = retime_dir / "orig_chunks"
@@ -506,21 +553,28 @@ def process_one_video(
     for i, part in enumerate(parts, start=1):
         out_ts = video_chunk_dir / f"v_{i:05d}.ts"
         video_chunks.append(out_ts)
-        if out_ts.exists():
+        if validate_media_file(
+            out_ts, require_video=True, expected_duration=frame_counts[i - 1] / frame_rate,
+            duration_tolerance=1 / frame_rate + 1e-5,
+        ):
             continue
         encode_video_chunk_ts(
             video_path, out_ts,
             start=part.orig_start, end=part.orig_end, speed=part.speed,
+            target_frames=frame_counts[i - 1], frame_rate=frame_rate,
         )
 
     video_ts = retime_dir / "video_retimed.ts"
     video_list = retime_dir / "video_concat.txt"
-    if not video_ts.exists():
+    if not validate_media_file(video_ts, require_video=True, expected_duration=frames_used / frame_rate,
+                               duration_tolerance=1 / frame_rate + 1e-5):
         print_step("   9-2. 映像チャンクを結合")
         concat_ts_files(video_chunks, video_ts, video_list)
 
     video_retimed_mp4 = retime_dir / "video_retimed.mp4"
-    if not video_retimed_mp4.exists():
+    if not validate_media_file(video_retimed_mp4, require_video=True,
+                               expected_duration=frames_used / frame_rate,
+                               duration_tolerance=1 / frame_rate + 1e-5):
         print_step("   9-3. 映像TSをMP4へリマックス")
         remux_ts_to_mp4(video_ts, video_retimed_mp4)
 
@@ -534,11 +588,12 @@ def process_one_video(
         for i, part in enumerate(parts, start=1):
             out_flac = orig_chunk_dir / f"orig_{i:05d}.flac"
             orig_chunks.append(out_flac)
-            if out_flac.is_file() and out_flac.stat().st_size > 0:
+            if validate_audio_file(out_flac, expected_samples=sample_counts[i - 1]):
                 continue
             encode_original_audio_chunk_flac(
                 background_audio_path, out_flac,
                 start=part.orig_start, end=part.orig_end, speed=part.speed,
+                target_samples=sample_counts[i - 1],
             )
 
         original_retimed_flac = retime_dir / "original_retimed.flac"
@@ -558,8 +613,8 @@ def process_one_video(
         if part.kind in ("gap", "tail"):
             sil = dubbed_chunk_dir / f"dub_{i:05d}_sil.flac"
             dubbed_items.append(sil)
-            if not sil.exists():
-                create_silence_flac(sil, part.out_duration)
+            if not validate_audio_file(sil, expected_samples=sample_counts[i - 1]):
+                create_silence_flac(sil, part.out_duration, target_samples=sample_counts[i - 1])
             continue
 
         meta = tts_meta.get(part.segno)
@@ -568,21 +623,31 @@ def process_one_video(
         else:
             sil = dubbed_chunk_dir / f"dub_{i:05d}_missing.flac"
             dubbed_items.append(sil)
-            if not sil.exists():
-                create_silence_flac(sil, part.out_duration)
+            if not validate_audio_file(sil, expected_samples=sample_counts[i - 1]):
+                create_silence_flac(sil, part.out_duration, target_samples=sample_counts[i - 1])
 
     dubbed_full_flac = retime_dir / "dubbed_full.flac"
     dubbed_list = retime_dir / "dubbed_concat.txt"
     concat_audio_to_flac(dubbed_items, dubbed_full_flac, dubbed_list)
+    if not validate_audio_file(dubbed_full_flac, expected_samples=samples_used):
+        raise PipelineError("吹き替え音声の総サンプル数がタイムラインと一致しません。")
+    if original_retimed_flac and not validate_audio_file(
+        original_retimed_flac, expected_samples=samples_used,
+    ):
+        raise PipelineError("背景音声の総サンプル数がタイムラインと一致しません。")
+    if abs(frames_used / frame_rate - samples_used / TTS_SAMPLE_RATE) > 1 / frame_rate + 1e-5:
+        raise PipelineError("映像と音声の総尺が1フレームを超えてずれています。")
 
     progress.set_artifact("dubbed_full_flac", str(dubbed_full_flac))
     progress.set_step("retime_done", True)
     progress.save()
 
     # ===== 10. mux =====
-    if progress.step("mux_done") and out_path.exists():
+    if completed_output_is_valid(out_path, video_path, ref_cache.cache_dir):
         print_step(f"=== 完了（mux済み）: {out_path} ===")
     else:
+        if video_signature(video_path) != progress.data["video"]:
+            raise PipelineError("処理中に入力動画が変更されました。再実行してください。")
         background_mix_volume = 1.0 if ENABLE_AUDIO_SEPARATION else ORIGINAL_VOLUME
         mix_label = "背景音声" if ENABLE_AUDIO_SEPARATION else "元音声薄く"
         print_step(f"10. リタイム済み映像 + 吹き替え音声（+{mix_label}）を合成")
@@ -594,6 +659,7 @@ def process_one_video(
             original_flac=original_retimed_flac,
             original_volume=background_mix_volume,
         )
+        publish_completion(out_path, video_path, ref_cache.cache_dir)
         progress.set_step("mux_done", True)
         progress.save()
         print_step(f"=== 完了: {out_path} ===")
@@ -617,7 +683,9 @@ def _save_tts_meta_entry(tts_meta, tts_meta_path, segno, flac_path, duration_sec
     tts_meta[segno] = TtsMeta(
         segno=segno, flac_path=flac_path, duration_sec=float(duration_sec),
     )
-    save_tts_meta_atomic(tts_meta_path, tts_meta)
+    atomic_write_json(tts_meta_path.parent / "tts_records" / f"{segno:05d}.json", {
+        "segno": segno, "flac_path": flac_path, "duration_sec": float(duration_sec),
+    })
 
 
 def _update_tts_progress(progress, done_count, total, tts_meta_path, save_artifact=False):
@@ -628,18 +696,11 @@ def _update_tts_progress(progress, done_count, total, tts_meta_path, save_artifa
 
 
 def _reuse_existing_tts_output(segno, out_flac, tts_meta, tts_meta_path):
-    if segno in tts_meta and Path(tts_meta[segno].flac_path).exists():
-        return "meta"
-
-    if out_flac.exists():
-        dur = ffprobe_duration_sec(out_flac)
-        if dur > 0:
-            _save_tts_meta_entry(
-                tts_meta, tts_meta_path,
-                segno=segno, flac_path=str(out_flac), duration_sec=dur,
-            )
-            return "flac"
-
+    if validate_audio_file(out_flac):
+        info = sf.info(out_flac)
+        _save_tts_meta_entry(tts_meta, tts_meta_path, segno, str(out_flac), info.frames / info.samplerate)
+        return "flac"
+    tts_meta.pop(segno, None)
     return None
 
 
@@ -652,60 +713,43 @@ def _run_tts_loop(
 
     total = len(segments_translated)
     tts_done = 0
-    tts_failed = 0
-
-    for segno, seg in enumerate(segments_translated, start=1):
-        if _should_skip_tts_segment(seg):
-            tts_done += 1
-            continue
-
-        out_audio_stub = seg_audio_dir / f"seg_{segno:05d}"
-        out_flac = out_audio_stub.with_suffix(".flac")
-
-        reused = _reuse_existing_tts_output(
-            segno=segno, out_flac=out_flac,
-            tts_meta=tts_meta, tts_meta_path=tts_meta_path,
-        )
-        if reused is not None:
-            tts_done += 1
-            if reused == "meta":
-                if segno % 50 == 0:
-                    _update_tts_progress(progress, tts_done, total, tts_meta_path)
-            else:
-                _update_tts_progress(progress, tts_done, total, tts_meta_path)
-            continue
-
-        print_step(segment_label_builder(segno, total, seg))
-
-        try:
-            meta0 = generator(seg, out_audio_stub, segno)
-        except Exception as exc:
-            print_step(f"  TTS失敗（スキップ）: seg {segno}/{total}: {exc}")
-            meta0 = None
-            tts_failed += 1
-
-        if meta0 is None:
-            tts_done += 1
-            continue
-
-        _save_tts_meta_entry(
-            tts_meta, tts_meta_path,
-            segno=segno, flac_path=meta0.flac_path, duration_sec=meta0.duration_sec,
-        )
-
-        tts_done += 1
-        _update_tts_progress(
-            progress, done_count=tts_done, total=total,
-            tts_meta_path=tts_meta_path, save_artifact=True,
-        )
-
-    if tts_failed > 0:
-        print_step(f"  TTS失敗セグメント数: {tts_failed}/{total}")
-
-    _update_tts_progress(
-        progress, done_count=total, total=total,
-        tts_meta_path=tts_meta_path, save_artifact=True,
-    )
+    failed: list[int] = []
+    # The final snapshot is written once; individual outputs/records survive interruption.
+    tts_meta = {number: item for number, item in tts_meta.items() if 1 <= number <= total}
+    ensure_dir(seg_audio_dir)
+    try:
+        for segno, seg in enumerate(segments_translated, start=1):
+            if _should_skip_tts_segment(seg):
+                tts_meta.pop(segno, None)
+                tts_done += 1
+                continue
+            out_flac = seg_audio_dir / f"seg_{segno:05d}.flac"
+            if _reuse_existing_tts_output(segno, out_flac, tts_meta, tts_meta_path):
+                tts_done += 1
+                continue
+            print_step(segment_label_builder(segno, total, seg))
+            try:
+                with TemporaryDirectory(prefix=".tts-", dir=seg_audio_dir) as directory:
+                    stub = Path(directory) / f"seg_{segno:05d}"
+                    meta0 = generator(seg, stub, segno)
+                    if meta0 is None or not validate_audio_file(Path(meta0.flac_path)):
+                        raise PipelineError("TTS が有効な音声を生成しませんでした。")
+                    Path(meta0.flac_path).replace(out_flac)
+                    info = sf.info(out_flac)
+                    _save_tts_meta_entry(tts_meta, tts_meta_path, segno, str(out_flac),
+                                         info.frames / info.samplerate)
+                tts_done += 1
+                _update_tts_progress(progress, tts_done, total, tts_meta_path, save_artifact=True)
+            except Exception as exc:
+                failed.append(segno)
+                print_step(f"  TTS失敗（再開時に再試行）: seg {segno}/{total}: {exc}")
+    finally:
+        save_tts_meta_atomic(tts_meta_path, tts_meta)
+        progress.set_step("tts", {"done_count": tts_done, "total": total, "failed": failed})
+        progress.set_artifact("tts_meta_json", str(tts_meta_path))
+        progress.save()
+    if failed:
+        raise PipelineError(f"TTS未完了: {len(failed)}/{total} 区間。再実行で失敗区間を再試行します。")
 
 
 def _run_tts_omnivoice(
@@ -794,10 +838,10 @@ def _run_tts_irodori(
     from xlanguage_dubbing.irodori_tts import (
         ensure_irodori_tts_server,
         generate_segment_tts_irodori,
+        release_irodori_tts_server,
     )
 
     print_step("8. Irodori-TTS で日本語ボイスクローン音声生成")
-    ensure_irodori_tts_server()
 
     def _build_segment_label(segno, total, seg):
         ref_duration = ref_cache.get_irodori_speaker_reference_duration(
@@ -814,14 +858,18 @@ def _run_tts_irodori(
             seg, out_audio_stub, ref_cache, segno=segno
         )
 
-    _run_tts_loop(
-        segments_translated=segments_translated,
-        seg_audio_dir=seg_audio_dir,
-        work_dir=work_dir,
-        progress=progress,
-        segment_label_builder=_build_segment_label,
-        generator=_generate,
-    )
+    try:
+        ensure_irodori_tts_server()
+        _run_tts_loop(
+            segments_translated=segments_translated,
+            seg_audio_dir=seg_audio_dir,
+            work_dir=work_dir,
+            progress=progress,
+            segment_label_builder=_build_segment_label,
+            generator=_generate,
+        )
+    finally:
+        release_irodori_tts_server()
 
 
 def _reload_cached_references(ref_cache, segments):
