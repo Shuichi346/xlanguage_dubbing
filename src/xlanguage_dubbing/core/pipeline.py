@@ -296,13 +296,11 @@ def process_one_video(
                 integrated_asr_name = "NeMo-Speech"
             else:
                 from xlanguage_dubbing.asr.vibevoice import (
-                    release_vibevoice_model,
                     vibevoice_transcribe,
                 )
 
                 print_step("2. VibeVoice-ASR で文字起こし（コードスイッチング対応）")
                 segments_raw, diarization = vibevoice_transcribe(wav_whisper)
-                release_vibevoice_model()
                 integrated_asr_name = "VibeVoice-ASR"
             if not segments_raw:
                 raise PipelineError(f"{integrated_asr_name} セグメントが空です。")
@@ -433,31 +431,37 @@ def process_one_video(
         validate_translation_languages(segment.detected_lang or detected_lang, OUTPUT_LANG)
     print_step(f"  翻訳エンジン: PLaMo 3 Translate 8B ({detected_lang} → {OUTPUT_LANG})")
 
-    # ===== 6. 話者リファレンス音声生成 =====
-    if ENABLE_VOICE_DESIGN:
-        print_step("6. 話者別ボイスデザインは翻訳モデル解放後に生成します")
-    elif _is_irodori_tts():
-        print_step(
-            "6. Irodori-TTS 用の話者別参照潜在キャッシュを生成"
-        )
-        ref_cache.build_irodori_speaker_references(
-            voice_audio_path,
-            segments_src,
-        )
-    else:
-        if diarization is not None:
-            print_step(f"6. {tts_display} 用の話者代表リファレンス音声を抽出")
-            ref_cache.build_omnivoice_references(
-                voice_audio_path, diarization, segments_src
+    try:
+        # ===== 6. 話者リファレンス音声生成 =====
+        if ENABLE_VOICE_DESIGN:
+            print_step("6. 話者別ボイスデザインは翻訳モデル解放後に生成します")
+        elif _is_irodori_tts():
+            print_step(
+                "6. Irodori-TTS 用の話者別参照潜在キャッシュを生成"
+            )
+            ref_cache.build_irodori_speaker_references(
+                voice_audio_path,
+                segments_src,
             )
         else:
-            _reload_cached_references(ref_cache, segments_src)
+            if diarization is not None:
+                print_step(f"6. {tts_display} 用の話者代表リファレンス音声を抽出")
+                ref_cache.build_omnivoice_references(
+                    voice_audio_path, diarization, segments_src
+                )
+            else:
+                _reload_cached_references(ref_cache, segments_src)
 
-        print_step(f"6.5. {tts_display} セグメント単位リファレンス音声を切り出し")
-        ref_cache.build_omnivoice_segment_references(
-            voice_audio_path,
-            segments_src,
-        )
+            print_step(f"6.5. {tts_display} セグメント単位リファレンス音声を切り出し")
+            ref_cache.build_omnivoice_segment_references(
+                voice_audio_path,
+                segments_src,
+            )
+
+    finally:
+        from xlanguage_dubbing.asr.vibevoice import release_vibevoice_model
+
+        release_vibevoice_model()
 
     # ===== 7. 翻訳 =====
     print_step("7. 翻訳（再開対応）")

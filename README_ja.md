@@ -79,7 +79,7 @@
 - FFmpeg と ffprobe でメディア解析・トランスコード・タイミング再調整・合成を行います。
 - Demucs でボーカル／背景の分離をオプションで行います。
 - spaCy で文を意識したセグメント分割を行います。
-- デフォルトの ASR パスには `mlx-audio` / MLX 経由の VibeVoice-ASR を使用します。
+- デフォルトの ASR パスには、公式 VibeVoice-ASR Q8 GGUF と Q8 音声プロジェクターを `llama-server` 経由で使用します。
 - オプションの whisper ASR パスには whisper.cpp・Silero VAD・pyannote.audio を使用します。
 - ローカルGGUF翻訳には公式の `llama.cpp`／`llama-server` とHugging Face Hubを使用します。
 - 音声クローン TTS には OmniVoice・VoxCPM2・Irodori-TTS-Server を使用します。
@@ -101,7 +101,7 @@ brew install ffmpeg cmake uv llama.cpp
 
 Linux・Windows・CUDA ワークフローはこのリポジトリ構成ではサポートされていません。
 
-依存関係の解決対象は macOS arm64 です。PyTorch `2.15.0`・TorchAudio `2.11.1`・TorchCodec `0.17.0`・Demucs `4.1.0` を固定し、FFmpeg `9.0.2` でネイティブデコードと合成メディアの検証を通過しています。FFmpeg 9 を維持してください。MLX Audio の新しい版が要求する `fsspec>=2026.6.0` と、VoxCPM2 が使う `datasets<4` の `fsspec<=2025.3.0` が競合するため、MLX Audio は `0.6.5` に固定しています。Irodori は後述する独立した固定環境で動作します。
+依存関係の解決対象は macOS arm64 です。PyTorch `2.15.0`・TorchAudio `2.11.1`・TorchCodec `0.17.0`・Demucs `4.1.0` を固定し、FFmpeg `9.0.2` でネイティブデコードと合成メディアの検証を通過しています。FFmpeg 9 を維持してください。MLX Audio・MLX・MLX LM は不要になりました。Irodori は後述する独立した固定環境で動作します。
 
 ## インストール
 
@@ -192,7 +192,9 @@ Irodori のデフォルトの待受先は `127.0.0.1` です。パイプライ�
 | `WHISPER_LANG` | whisper.cpp の言語引数；通常は `INPUT_LANG` または `auto` に従います。 |
 | `VAD_MODEL` | whisper.cpp VAD モデル名。 |
 | `WHISPER_CPP_DIR` | ローカルの whisper.cpp チェックアウトパス。 |
-| `VIBEVOICE_MODEL` | MLX VibeVoice-ASR モデル。 |
+| `VIBEVOICE_SERVER_BIN` | 対応版 `llama-server` のパス。空欄は一時的なプロジェクト内ビルドを優先。`llama-server` と指定すると PATH／Homebrew 版を選択。 |
+| `VIBEVOICE_N_CTX` | コンテキスト長。既定 `65536`。生成上限と入力トークンを収める必要があります。 |
+| `VIBEVOICE_N_GPU_LAYERS` | GPU 層数。既定 `-1` は Metal。`0` は音声プロジェクターを含む CPU 実行。 |
 | `VIBEVOICE_MAX_TOKENS` | VibeVoice の最大生成トークン数。 |
 | `VIBEVOICE_CONTEXT` | VibeVoice-ASR のオプションコンテキストプロンプト。 |
 | `NEMO_SPEECH_BIN` | インストール済みの NeMo-Speech.cpp 実行ファイル。デフォルトは `nemo-speech`。`~/.local/bin` も探索します。 |
@@ -250,9 +252,21 @@ Irodori のデフォルトの待受先は `127.0.0.1` です。パイプライ�
 
 | エンジン | 使用場面 | 備考 |
 |---|---|---|
-| `vibevoice` | 話者情報を統合した多言語またはコードスイッチング ASR を使いたい場合。 | デフォルトモード。Apple Silicon 上で MLX モデルを使用し、pyannote 話者ダイアライゼーションパスをスキップします。 |
+| `vibevoice` | 話者情報を統合した多言語またはコードスイッチング ASR を使いたい場合。 | デフォルトモード。Apple Silicon 上で公式 Q8 GGUF と Q8 プロジェクターを使用し、pyannote をスキップします。 |
 | `whisper` | VAD 付きの whisper.cpp ASR を使いたい場合。 | `scripts/setup_whisper.sh` が必要。話者 ID は pyannote.audio で割り当てられ、`HF_AUTH_TOKEN` が必要です。 |
 | `nemo-speech` | NeMo の文字起こしと話者分離をまとめて使いたい場合。 | インストール済み CLI と指定の Nemotron ASR／話者分離モデルを使用。最大8人で、pyannote は使用しません。 |
+
+VibeVoice は公式の [`VibeVoice-ASR-Q8_0.gguf` と `mmproj-VibeVoice-ASR-Q8_0.gguf`](https://huggingface.co/ggml-org/VibeVoice-ASR-GGUF/tree/main)（合計約8.94 GB）を、プロジェクト直下の `models/VibeVoice-ASR-GGUF/` に自動取得します。音声プロジェクターも必須です。両方を同じ固定リビジョンで使用します。旧 `VIBEVOICE_MODEL` 環境設定と MLX 専用のチャンク／メモリ設定は廃止しました。旧 MLX の作業フォルダーは保存され、新しい設定では再利用しません。
+
+現在インストールされている Homebrew の `llama.cpp` 1.0.0 は [VibeVoice 対応](https://github.com/ggml-org/llama.cpp/pull/32329)より前の版です。Homebrew が対応するまで、次の一時的な専用ビルドを使用します。
+
+```bash
+bash scripts/setup_vibevoice.sh
+```
+
+公式コミット `fc504f91d8cfdfcd9b0fedcf14600fd2b0e63420` を `models/llama.cpp-vibevoice/` に固定し、Homebrew や PLaMo の実行環境は変更しません。`VIBEVOICE_SERVER_BIN` が空欄の場合はこのビルドを優先します。将来の Homebrew 版で Q8 の文字起こしと参照音声処理が実際に通ることを確認したら、`.env` に `VIBEVOICE_SERVER_BIN=llama-server` を指定して切り替えます。AI エージェント向けの移行条件は `AGENTS.md` に記載しています。
+
+音声全体と実際の長さを `/v1/chat/completions` に渡します。24 kHz への変換と音声エンコーダーのチャンク処理はネイティブ側で行い、話者 ID を途中でリセットしません。時刻・話者 ID を検証し、トークン上限などで途切れた結果は完了扱いにしません。認証付きローカル専用サーバーは、本編 ASR 後・参照音声処理後・失敗時に終了し、翻訳や TTS の前にメモリを解放します。
 
 NeMo を使う場合は `.env` の `ASR_ENGINE=nemo-speech` を指定します。`nemo-speech transcribe <audio.wav> --diarize --diar-model <model> --model <model> --device metal --json` を実行し、単語ごとの時刻と話者番号を吹き替え用セグメントへ変換します。参照音声の文字起こしも NeMo を使用し、その際は話者分離を省略します。`INPUT_LANG=auto` では言語引数を渡さず、CLI が単一の言語を返した場合はそれを使用し、それ以外はテキストから言語を判定します。
 

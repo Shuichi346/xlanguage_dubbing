@@ -134,13 +134,4 @@ def force_memory_cleanup() -> None:
     except ImportError:
         pass
 
-    try:
-        import mlx.core as mx
-        if hasattr(mx, "clear_cache"):
-            mx.clear_cache()
-        elif hasattr(mx, "metal") and hasattr(mx.metal, "clear_cache"):
-            mx.metal.clear_cache()
-    except (ImportError, AttributeError):
-        pass
-
     gc.collect()

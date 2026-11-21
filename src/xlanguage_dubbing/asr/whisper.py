@@ -79,21 +79,6 @@ def extract_wav_for_whisper(video_path: Path, wav_path: Path) -> None:
     run_cmd(cmd)
 
 
-def extract_wav_for_vibevoice(video_path: Path, wav_path: Path) -> None:
-    """動画から24kHz mono WAVを抽出する。"""
-    from xlanguage_dubbing.config import VIBEVOICE_SAMPLE_RATE
-
-    which_or_raise("ffmpeg")
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", str(video_path),
-        "-vn", "-ac", "1", "-ar", str(VIBEVOICE_SAMPLE_RATE),
-        "-c:a", "pcm_s16le",
-        str(wav_path),
-    ]
-    run_cmd(cmd)
-
-
 def whisper_transcribe(wav_path: Path) -> tuple[list[Segment], str]:
     """whisper.cpp CLI + VAD で音声を文字起こしする。
 

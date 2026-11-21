@@ -79,7 +79,7 @@ This demo shows the result of translating and dubbing a short English video into
 - FFmpeg and ffprobe for media probing, transcoding, retiming, and muxing.
 - Demucs for optional vocal/background separation.
 - spaCy for sentence-aware segment splitting.
-- VibeVoice-ASR via `mlx-audio` / MLX for the default ASR path.
+- Official VibeVoice-ASR Q8 GGUF plus its Q8 audio projector through `llama-server` for the default ASR path.
 - whisper.cpp, Silero VAD, and pyannote.audio for the optional whisper ASR path.
 - Official `llama.cpp` / `llama-server` and Hugging Face Hub for local GGUF translation.
 - OmniVoice, VoxCPM2, and Irodori-TTS-Server for voice-cloned TTS.
@@ -101,7 +101,7 @@ brew install ffmpeg cmake uv llama.cpp
 
 Linux, Windows, and CUDA workflows are not supported by this repository configuration.
 
-Dependency resolution targets macOS arm64. The project pins PyTorch `2.15.0`, TorchAudio `2.11.1`, TorchCodec `0.17.0`, and Demucs `4.1.0`; native decoding and synthetic media checks passed with FFmpeg `9.0.2`. Keep FFmpeg 9. MLX Audio stays pinned to `0.6.5` because newer releases require `fsspec>=2026.6.0`, conflicting with VoxCPM2's `datasets<4` requirement of `fsspec<=2025.3.0`. Irodori uses its separate pinned server environment described below.
+Dependency resolution targets macOS arm64. The project pins PyTorch `2.15.0`, TorchAudio `2.11.1`, TorchCodec `0.17.0`, and Demucs `4.1.0`; native decoding and synthetic media checks passed with FFmpeg `9.0.2`. Keep FFmpeg 9. MLX Audio, MLX, and MLX LM are no longer required. Irodori uses its separate pinned server environment described below.
 
 ## Installation
 
@@ -192,7 +192,9 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 | `WHISPER_LANG` | whisper.cpp language argument; normally follows `INPUT_LANG` or `auto`. |
 | `VAD_MODEL` | whisper.cpp VAD model name. |
 | `WHISPER_CPP_DIR` | Local whisper.cpp checkout path. |
-| `VIBEVOICE_MODEL` | MLX VibeVoice-ASR model. |
+| `VIBEVOICE_SERVER_BIN` | Optional compatible `llama-server` path. Blank prefers the temporary project build; `llama-server` explicitly selects PATH/Homebrew. |
+| `VIBEVOICE_N_CTX` | Native context length, default `65536`. Must exceed `VIBEVOICE_MAX_TOKENS` plus input tokens. |
+| `VIBEVOICE_N_GPU_LAYERS` | GPU layers, default `-1` for Metal. Set `0` for CPU, including the audio projector. |
 | `VIBEVOICE_MAX_TOKENS` | Maximum VibeVoice generation tokens. |
 | `VIBEVOICE_CONTEXT` | Optional context prompt for VibeVoice-ASR. |
 | `NEMO_SPEECH_BIN` | Installed NeMo-Speech.cpp executable; defaults to `nemo-speech`, with a `~/.local/bin` fallback. |
@@ -250,9 +252,21 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 
 | Engine | Use When | Notes |
 |---|---|---|
-| `vibevoice` | You want multilingual or code-switched ASR with integrated speaker information. | Default mode. Uses MLX models on Apple Silicon and skips the pyannote speaker diarization pass. |
+| `vibevoice` | You want multilingual or code-switched ASR with integrated speaker information. | Default mode. Uses the official Q8 GGUF and Q8 projector on Apple Silicon; skips pyannote. |
 | `whisper` | You want whisper.cpp ASR with VAD. | Requires `scripts/setup_whisper.sh`; speaker IDs are assigned with pyannote.audio and require `HF_AUTH_TOKEN`. |
 | `nemo-speech` | You want native NeMo transcription and integrated speaker tags. | Uses the installed CLI and explicit Nemotron ASR/diarization models. Supports up to eight speakers and skips pyannote. |
+
+VibeVoice downloads the fixed official [`VibeVoice-ASR-Q8_0.gguf` and `mmproj-VibeVoice-ASR-Q8_0.gguf`](https://huggingface.co/ggml-org/VibeVoice-ASR-GGUF/tree/main) (about 8.94 GB combined) to project-root `models/VibeVoice-ASR-GGUF/`. The projector is required. Both files use one pinned model revision; the former `VIBEVOICE_MODEL` environment setting and MLX-specific chunk/memory options are removed. Existing MLX job directories remain intact and are not reused by the new profile.
+
+The currently installed Homebrew `llama.cpp` 1.0.0 predates [VibeVoice support](https://github.com/ggml-org/llama.cpp/pull/32329). Until Homebrew includes it, prepare a temporary isolated official runtime:
+
+```bash
+bash scripts/setup_vibevoice.sh
+```
+
+This pins official commit `fc504f91d8cfdfcd9b0fedcf14600fd2b0e63420` under `models/llama.cpp-vibevoice/`; it does not change Homebrew or PLaMo's runtime. Blank `VIBEVOICE_SERVER_BIN` prefers that build. Once a future Homebrew version passes real Q8 transcription and reference-clip checks, set `VIBEVOICE_SERVER_BIN=llama-server` in `.env` to bypass the temporary build. Agent-facing migration criteria are recorded in `AGENTS.md`.
+
+The pipeline sends a whole audio input with its real duration to `/v1/chat/completions`; native encoding handles resampling to 24 kHz and audio chunks without resetting speaker IDs. Structured timestamps and speaker IDs are validated, and truncated output fails instead of becoming a completed transcript. The private authenticated loopback server is stopped after main ASR, after reference extraction, and on failures, before translation/TTS begins.
 
 To select NeMo, set `ASR_ENGINE=nemo-speech` in `.env`. The pipeline invokes `nemo-speech transcribe <audio.wav> --diarize --diar-model <model> --model <model> --device metal --json`, converts word times and speaker tags into dubbing segments, and uses NeMo without diarization for reference-clip text. `INPUT_LANG=auto` omits the language argument; a single language reported by the CLI is used before falling back to text-based language detection.
 

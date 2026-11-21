@@ -15,6 +15,7 @@
 ### Added
 
 - Added source/content identities, completed-video manifests, input-bound translation records, and the implementation/verification checklist in `PLANS.md`.
+- Added a temporary, pinned official llama.cpp build helper for VibeVoice and an explicit runtime override for future migration to a compatible Homebrew release.
 
 ### Changed
 
@@ -25,12 +26,14 @@
 - Kept FFmpeg 9 and installed compatible native PyTorch 2.15.0, TorchAudio 2.11.1, TorchCodec 0.17.0, and Demucs 4.1.0; updated NumPy, pyannote.audio, Accelerate, and Ruff. Pinned MLX Audio to 0.6.5 because newer releases conflict with VoxCPM2's `datasets`/`fsspec` requirements.
 - Replaced repeated full translation/TTS checkpoint rewrites with per-utterance records and final snapshots, and indexed speaker intervals instead of scanning every interval for every ASR segment.
 - Defaulted Irodori to localhost and restricted credential-bearing generated launchers to owner-only access. Folder scans excluded generated outputs from subsequent dubbing jobs.
+- Replaced MLX VibeVoice-ASR with the official `VibeVoice-ASR-Q8_0.gguf` and matching Q8 audio projector, using an owned native localhost server for full-input and reference transcription. Validated native timestamps/speaker keys and rejected incomplete generations before publishing transcripts.
 
 ### Removed
 
 - Removed CAT-Translate and TranslateGemma implementations, language-pair routing, and environment settings without compatibility aliases.
 - Removed the `llama-cpp-python` dependency in favor of the official native `llama.cpp` runtime with PLaMo tokenizer support.
 - Removed unused reference transcription from VoxCPM2's reference-only cloning path.
+- Removed MLX Audio, MLX, MLX LM, their unused audio dependencies, and MLX-only encoder chunking, memory controls, and preprocessing code.
 
 ## 2026-10-23
 
