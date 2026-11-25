@@ -52,7 +52,7 @@ This demo shows the result of translating and dubbing a short English video into
 - Optionally separates vocals and background audio with Demucs `--two-stems vocals`.
 - Preserves the raw-audio fallback path when Demucs separation is disabled.
 - Normalizes ASR segments with merge rules, spaCy sentence splitting, and sentence-unit merging.
-- Selects CAT-Translate for English/Japanese pairs and TranslateGemma for other language pairs.
+- Uses PLaMo 3 Translate 8B Q4_K_M for every language pair, limited to its 53 officially supported languages.
 - Provides three TTS engines: OmniVoice, VoxCPM2, and Irodori-TTS-Server.
 - Builds engine-specific speaker and per-segment reference audio for cloned speech synthesis.
 - Retimes the source video to match generated TTS durations.
@@ -79,9 +79,9 @@ This demo shows the result of translating and dubbing a short English video into
 - FFmpeg and ffprobe for media probing, transcoding, retiming, and muxing.
 - Demucs for optional vocal/background separation.
 - spaCy for sentence-aware segment splitting.
-- VibeVoice-ASR via `mlx-audio` / MLX for the default ASR path.
+- Official VibeVoice-ASR Q8 GGUF plus its Q8 audio projector through `llama-server` for the default ASR path.
 - whisper.cpp, Silero VAD, and pyannote.audio for the optional whisper ASR path.
-- `llama-cpp-python` and Hugging Face Hub for local GGUF translation models.
+- Official `llama.cpp` / `llama-server` and Hugging Face Hub for local GGUF translation.
 - OmniVoice, VoxCPM2, and Irodori-TTS-Server for voice-cloned TTS.
 - PyTorch, torchaudio, TorchCodec, soundfile, and pydub for audio/model support.
 
@@ -92,13 +92,16 @@ This demo shows the result of translating and dubbing a short English video into
 - Homebrew packages:
 
 ```bash
-brew install ffmpeg cmake uv
+brew install ffmpeg cmake uv llama.cpp
 ```
 
+- A recent `llama-server` supporting the PLaMo `plamo3` tokenizer. Upgrade an older Homebrew installation with `brew upgrade llama.cpp`.
 - Internet access for first-time dependency and model downloads.
 - A Hugging Face token in `HF_AUTH_TOKEN` when using whisper mode with pyannote diarization, and for any gated or authenticated model downloads.
 
 Linux, Windows, and CUDA workflows are not supported by this repository configuration.
+
+Dependency resolution targets macOS arm64. The project pins PyTorch `2.15.0`, TorchAudio `2.11.1`, TorchCodec `0.17.0`, and Demucs `4.1.0`; native decoding and synthetic media checks passed with FFmpeg `9.0.2`. Keep FFmpeg 9. MLX Audio, MLX, and MLX LM are no longer required. Irodori uses its separate pinned server environment described below.
 
 ## Installation
 
@@ -151,7 +154,9 @@ To generate a helper server script:
 uv run xlanguage-dubbing --generate-script
 ```
 
-When `TTS_ENGINE=irodori`, the generated `start_servers.sh` starts Irodori-TTS-Server with the configured host and port. For OmniVoice and VoxCPM2, it reports that no external server is needed.
+When `TTS_ENGINE=irodori`, the generated `start_servers.sh` starts Irodori-TTS-Server with the configured host and port. OmniVoice and VoxCPM2 run in-process. Translation starts and stops its own local `llama-server` automatically; no manual translation-server launch is needed.
+
+Irodori binds to `127.0.0.1` by default. Pipeline-owned startup and generated launchers require `IRODORI_TTS_API_KEY` for a non-loopback bind; the same key is sent with API requests. The Irodori launcher has owner-only permissions (`0700`) and includes the configured key when set. Regenerate it with `uv run xlanguage-dubbing --generate-script` after changing configuration. Existing launchers and externally managed servers are not updated automatically.
 
 ## Configuration
 
@@ -165,8 +170,8 @@ All runtime settings are read from `.env`. See [.env.example](.env.example) for 
 | `TEMP_ROOT` | Checkpoint and intermediate output root. |
 | `OUTPUT_SUFFIX` | Suffix appended to generated videos. |
 | `KEEP_TEMP` | Keep or delete each video's temporary working directory after muxing. |
-| `INPUT_LANG` | Source language ISO code, or `auto`. |
-| `OUTPUT_LANG` | Target dubbed language ISO code. |
+| `INPUT_LANG` | PLaMo-supported source language code, or `auto`. |
+| `OUTPUT_LANG` | PLaMo-supported target language code, also subject to TTS language restrictions. |
 | `TTS_SAMPLE_RATE` | Project-standard TTS/output audio sample rate. |
 | `TTS_CHANNELS` | Project-standard TTS/output audio channel count. |
 | `ORIGINAL_VOLUME` | Raw original audio volume when audio separation is disabled. |
@@ -187,7 +192,9 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 | `WHISPER_LANG` | whisper.cpp language argument; normally follows `INPUT_LANG` or `auto`. |
 | `VAD_MODEL` | whisper.cpp VAD model name. |
 | `WHISPER_CPP_DIR` | Local whisper.cpp checkout path. |
-| `VIBEVOICE_MODEL` | MLX VibeVoice-ASR model. |
+| `VIBEVOICE_SERVER_BIN` | Optional compatible `llama-server` path. Blank prefers the temporary project build; `llama-server` explicitly selects PATH/Homebrew. |
+| `VIBEVOICE_N_CTX` | Native context length, default `65536`. Must exceed `VIBEVOICE_MAX_TOKENS` plus input tokens. |
+| `VIBEVOICE_N_GPU_LAYERS` | GPU layers, default `-1` for Metal. Set `0` for CPU, including the audio projector. |
 | `VIBEVOICE_MAX_TOKENS` | Maximum VibeVoice generation tokens. |
 | `VIBEVOICE_CONTEXT` | Optional context prompt for VibeVoice-ASR. |
 | `NEMO_SPEECH_BIN` | Installed NeMo-Speech.cpp executable; defaults to `nemo-speech`, with a `~/.local/bin` fallback. |
@@ -206,8 +213,12 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 | `SPACY_MODEL` | spaCy model used for sentence splitting. |
 | `SPACY_CHUNK_MAX_SEC`, `SPACY_CHUNK_MAX_CHARS`, `SPACY_CHUNK_GAP_SEC` | Limits for building spaCy input chunks. |
 | `SPACY_UNIT_MAX_SENTENCES`, `SPACY_UNIT_MERGE_MAX_CHARS`, `SPACY_UNIT_MERGE_MAX_GAP_SEC` | Sentence-unit merge limits after spaCy splitting. |
-| `CAT_TRANSLATE_*` | CAT-Translate GGUF model, context, retry, and repeat-penalty settings. |
-| `TRANSLATEGEMMA_*` | TranslateGemma GGUF model, context, retry, and repeat-penalty settings. |
+| `PLAMO_TRANSLATE_SERVER_BIN` | `llama-server` executable name or path; defaults to `llama-server`, with `/opt/homebrew/bin/llama-server` as a fallback. |
+| `PLAMO_TRANSLATE_N_GPU_LAYERS` | GPU-offloaded layers, default `-1` for all layers. |
+| `PLAMO_TRANSLATE_N_CTX` | Combined input/output context length, default `8192`. |
+| `PLAMO_TRANSLATE_RETRIES` | Translation attempts, default `3`. |
+| `PLAMO_TRANSLATE_RETRY_BACKOFF_SEC` | Base retry delay in seconds, default `1.5`. |
+| `PLAMO_TRANSLATE_REPEAT_PENALTY` | Repetition penalty, default `1.0`. |
 | `OUTPUT_REPEAT_THRESHOLD`, `INPUT_REPEAT_THRESHOLD` | Repetition thresholds used to detect translation glitches. |
 
 ### TTS Engines
@@ -218,10 +229,12 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 | `OMNIVOICE_*` | OmniVoice model, dtype, sampling, duration, reference, and retry settings. |
 | `VOXCPM2_*` | VoxCPM2 model, controllable cloning, duration, reference, and retry settings. |
 | `IRODORI_TTS_BASE_URL` | Irodori-TTS-Server base URL. |
+| `IRODORI_TTS_SERVER_HOST` | Server bind address, default `127.0.0.1`; non-loopback startup requires an API key. |
+| `IRODORI_TTS_SERVER_PORT` | Server port, default `8088`. |
 | `IRODORI_TTS_DIR` | Local server-fork checkout, default `./Irodori-TTS-Server-nonWatermark`. |
 | `IRODORI_TTS_AUTO_START` | Start Irodori-TTS-Server automatically when it is not already healthy. |
 | `IRODORI_TTS_START_COMMAND` | Optional custom server start command. |
-| `IRODORI_TTS_API_KEY` | Optional API key sent to Irodori-TTS-Server. |
+| `IRODORI_TTS_API_KEY` | API key sent to Irodori-TTS-Server; required for non-loopback pipeline-owned startup and generated launchers. |
 | `IRODORI_HF_CHECKPOINT` | Hugging Face checkpoint used by Irodori-TTS-Server, default `Aratako/Irodori-TTS-v4.1-Small-MF`. |
 | `IRODORI_CODEC_REPO` | DACVAE codec used for Irodori reference latent generation and server decoding, default `Aratako/Semantic-DACVAE-Japanese-32dim`. |
 | `IRODORI_MODEL_DEVICE` | Device used by the Irodori model, default `cpu`. Due to a PyTorch bug, `mps` may cause increased memory usage — be cautious of processing load. |
@@ -239,9 +252,21 @@ When `ENABLE_AUDIO_SEPARATION=true`, the separated background stem is mixed at f
 
 | Engine | Use When | Notes |
 |---|---|---|
-| `vibevoice` | You want multilingual or code-switched ASR with integrated speaker information. | Default mode. Uses MLX models on Apple Silicon and skips the pyannote speaker diarization pass. |
+| `vibevoice` | You want multilingual or code-switched ASR with integrated speaker information. | Default mode. Uses the official Q8 GGUF and Q8 projector on Apple Silicon; skips pyannote. |
 | `whisper` | You want whisper.cpp ASR with VAD. | Requires `scripts/setup_whisper.sh`; speaker IDs are assigned with pyannote.audio and require `HF_AUTH_TOKEN`. |
 | `nemo-speech` | You want native NeMo transcription and integrated speaker tags. | Uses the installed CLI and explicit Nemotron ASR/diarization models. Supports up to eight speakers and skips pyannote. |
+
+VibeVoice downloads the fixed official [`VibeVoice-ASR-Q8_0.gguf` and `mmproj-VibeVoice-ASR-Q8_0.gguf`](https://huggingface.co/ggml-org/VibeVoice-ASR-GGUF/tree/main) (about 8.94 GB combined) to project-root `models/VibeVoice-ASR-GGUF/`. The projector is required. Both files use one pinned model revision; the former `VIBEVOICE_MODEL` environment setting and MLX-specific chunk/memory options are removed. Existing MLX job directories remain intact and are not reused by the new profile.
+
+The currently installed Homebrew `llama.cpp` 1.0.0 predates [VibeVoice support](https://github.com/ggml-org/llama.cpp/pull/32329). Until Homebrew includes it, prepare a temporary isolated official runtime:
+
+```bash
+bash scripts/setup_vibevoice.sh
+```
+
+This pins official commit `fc504f91d8cfdfcd9b0fedcf14600fd2b0e63420` under `models/llama.cpp-vibevoice/`; it does not change Homebrew or PLaMo's runtime. Blank `VIBEVOICE_SERVER_BIN` prefers that build. Once a future Homebrew version passes real Q8 transcription and reference-clip checks, set `VIBEVOICE_SERVER_BIN=llama-server` in `.env` to bypass the temporary build. Agent-facing migration criteria are recorded in `AGENTS.md`.
+
+The pipeline sends a whole audio input with its real duration to `/v1/chat/completions`; native encoding handles resampling to 24 kHz and audio chunks without resetting speaker IDs. Structured timestamps and speaker IDs are validated, and truncated output fails instead of becoming a completed transcript. The private authenticated loopback server is stopped after main ASR, after reference extraction, and on failures, before translation/TTS begins.
 
 To select NeMo, set `ASR_ENGINE=nemo-speech` in `.env`. The pipeline invokes `nemo-speech transcribe <audio.wav> --diarize --diar-model <model> --model <model> --device metal --json`, converts word times and speaker tags into dubbing segments, and uses NeMo without diarization for reference-clip text. `INPUT_LANG=auto` omits the language argument; a single language reported by the CLI is used before falling back to text-based language detection.
 
@@ -297,56 +322,48 @@ Age/gender estimation downloads the [official audEERING 24-layer model](https://
 
 VoxCPM2 uses a voice-description prefix, and Irodori uses Caption only to generate the initial reference. OmniVoice selects supported gender/age attributes with moderate pitch. Japanese and English are supported with VoxCPM2/OmniVoice; Irodori v4.1 Small MF remains Japanese-only. Each sample reads the fixed weather/station/blue-roof passage in the target language. Subsequent cloning uses only the generated reference audio or its cached Irodori latent; model weights are not fine-tuned.
 
-Designed voices are saved under the audio mode's `voice_design/<engine>_<language>_<settings>/speaker_refs/` directory. Source text recognition and translation are isolated there too. Outputs include a `_voice_design_...` marker, so completed original-voice outputs do not prevent this mode from running. Valid voices persist across restarts, including fallback male voices after estimator installation; change `VOICE_DESIGN_SEED` to create a new voice set. Corrupt references are rebuilt individually, and rendering uses reference fingerprints to avoid mixing previous voices. For Irodori, only a server started by this pipeline is stopped before the short-lived codec worker; externally managed servers remain under their owner's control.
+Designed voices are saved under the translation namespace's `input_<20-character-hash>/voice_design/<engine>_<language>_<settings>/speaker_refs/` directory. Source text recognition and translation are isolated there too. Outputs include a `_voice_design_...` marker, so completed original-voice outputs do not prevent this mode from running. Valid voices persist across restarts, including fallback male voices after estimator installation; change `VOICE_DESIGN_SEED` to create a new voice set. Corrupt references are rebuilt individually, and rendering uses reference fingerprints to avoid mixing previous voices. For Irodori, only a server started by this pipeline is stopped before the short-lived codec worker; externally managed servers remain under their owner's control.
 
 ### Translation
 
-| Language Pair | Engine |
-|---|---|
-| English to Japanese | CAT-Translate |
-| Japanese to English | CAT-Translate |
-| Other pairs | TranslateGemma |
+Every language pair uses `plamo-3-translate-8b-Q4_K_M.gguf` from the [official GGUF repository](https://huggingface.co/pfnet/plamo-3-translate-8b-GGUF). The repository and filename are fixed. On first use, the 5.28 GB model downloads into the project-root `models/plamo-3-translate-8b-GGUF/` directory. Translation lazily starts a pipeline-owned `llama-server` on a random localhost port and sends PFML3 prompts to `/v1/completions` through Python's standard library. The pipeline stops that process before TTS and when processing fails.
 
-Both translation engines run through local GGUF inference. The pipeline releases translation models before TTS to free memory.
+Source and target languages must belong to the following 53 supported codes. `INPUT_LANG=auto` is accepted, but an unsupported detected language raises an error. TTS engine and voice-design language restrictions also apply.
+
+```text
+ja en zh-hans zh-hant ko ar az be bg bn ca ceb de es et eu fa fr gu he
+hi hr hu hy id it jv ka kk km lt lv ml mr ms my ne nl pa pl ru si sk sl
+sr sw ta te th tl ur uz vi
+```
+
+Chinese distinguishes Simplified `zh-hans` from Traditional `zh-hant`. `zh` and `zh-cn` map to Simplified; `zh-tw`, `zh-hk`, and `zh-mo` map to Traditional. Other regional codes normalize to their base language.
 
 ## Resume and Outputs
 
-The final video is written next to the source video as:
-
-```text
-<source-stem><OUTPUT_SUFFIX>
-```
-
-The default `OUTPUT_SUFFIX` is `_xlDub.mp4`. Original-voice OmniVoice/VoxCPM2 runs use the name above. Irodori original-voice runs and voice-design runs add a namespace before that suffix:
+Final videos are written next to the source. The default `OUTPUT_SUFFIX` is `_xlDub.mp4`. Every mode includes the translation namespace `plamo3_<target-language>_<12-character-hash>` and a 16-character identity for the source, active analysis, synthesis, and effective mix/output settings.
 
 | Mode | Final filename |
 |---|---|
-| Irodori original voice | `<source-stem>_irodori_<settings-hash><OUTPUT_SUFFIX>` |
-| Voice design | `<source-stem>_voice_design_<engine>_<language>_<settings-hash><OUTPUT_SUFFIX>` |
+| OmniVoice/VoxCPM2 original voice | `<source-stem>_<translation-namespace>_<16-character-identity><OUTPUT_SUFFIX>` |
+| Irodori original voice | `<source-stem>_<translation-namespace>_<16-character-identity>_irodori_<settings-hash><OUTPUT_SUFFIX>` |
+| Voice design | `<source-stem>_<translation-namespace>_<16-character-identity>_voice_design_<engine>_<language>_<settings-hash><OUTPUT_SUFFIX>` |
 
-Changing the Irodori model or step count selects a different output name, preserving old videos instead of skipping the new model's render.
+Temporary directory bases remain separated by audio source:
 
-The pipeline saves checkpoints and artifacts under `TEMP_ROOT`, including:
+- `temp/<video>` with Demucs enabled.
+- `temp/<video>_rawaudio` with Demucs disabled.
 
-- `progress.json`
-- `segments_src.json`
-- `segments_translated.json`
-- `subtitles_src.srt`
-- `speaker_refs/` (including Irodori's per-speaker `.pt` reference latent caches)
-- `seg_audio/`
-- `tts_meta.json`
-- `retime/`
+NeMo adds `nemo-speech/` under that base. Every ASR mode then adds `<translation-namespace>/input_<20-character-hash>/`; voice design adds another `voice_design/<engine>_<language>_<settings-hash>/` beneath it. The input hash binds the resolved source path, content, file metadata, and active ASR/segmentation/separation settings, keeping changed or same-named inputs separate. Previous work directories and outputs remain intact.
 
-Temporary directories are isolated by audio source mode:
+The resulting work directory holds `progress.json`, `segments_src.json`, `segments_translated.json`, `subtitles_src.srt`, and `speaker_refs/`. NeMo also saves its validated CLI output as `nemo_speech.json` there. Translation saves atomic, source-bound per-segment checkpoints in `segments_translated.records/` and writes the aggregate JSON on completion.
 
-- `temp/<video>` when Demucs separation is enabled.
-- `temp/<video>_rawaudio` when Demucs separation is disabled.
+Every TTS engine, in both original-voice and voice-design modes, stores `seg_audio/`, per-utterance `tts_records/`, and aggregate `tts_meta.json` under `render/<fingerprint>/`. Render fingerprints include translated lines and timing, effective synthesis settings, and selected reference audio/latent contents or reference text as applicable. Irodori settings also include the server's `uv.lock` hash. Retimed tracks live under that render directory's `retime/<parts-and-cadence-fingerprint>/`, so changed individual speech durations cannot reuse an old joined video even when the total duration is unchanged.
 
-NeMo stores its checkpoints and references in a `nemo-speech/` subdirectory of the selected audio-mode directory, so selecting NeMo does not reuse VibeVoice/Whisper outputs. The validated CLI output is saved as `nemo_speech.json` there.
+The translation namespace includes the model, prompt protocol, configured source language, target language, context length, and repetition penalty. Earlier translation-model checkpoints and final videos are not reused; the new work directory starts from ASR. Changing these translation settings selects another directory and output name. Translation resume also compares source text, timing, speakers, and languages.
 
-For Irodori original-voice jobs, ASR and translation remain in the audio/ASR work directory; `seg_audio/`, `tts_meta.json`, and `retime/` live under `render/<fingerprint>/`. The fingerprint includes effective synthesis settings, reference-latent contents, and translated segments. Voice-design jobs add `voice_design/<engine>_<language>_<settings-hash>/` below the audio/ASR directory, store generated samples in its `speaker_refs/`, and render under its own `render/<fingerprint>/` directory. The server's `uv.lock` hash also participates in the Irodori settings fingerprint, so installing the pinned inference fork selects separate voice and render caches and output names. Old shared TTS and retime artifacts are preserved and are not reused by the migrated Irodori run.
+Resume validates source and cache identities instead of trusting file existence alone. A completed MP4 is skipped only with a matching completion manifest: `example.mp4` uses `example.complete.json`. The manifest checks the input, effective settings, output signature, and retained references; intentional `KEEP_TEMP=false` cleanup still allows completed-output skips. Folder scans exclude generated outputs from future dubbing inputs.
 
-Rerunning the command resumes completed work when `progress.json` matches the source video's size and modification time. To force a full rerun for one video, remove that video's temporary directory and any existing final output file.
+Media is staged and validated before atomic publication. Missing, failed, or corrupt required TTS prevents completed-video publication; valid sibling utterances remain reusable on retry. To force a full rerun for one configuration while preserving earlier results, move its work directory, final video, and completion manifest outside the input and work trees before rerunning. Moving only the final video and manifest rebuilds the mux while retaining validated speech and retimed caches.
 
 ## Troubleshooting
 
@@ -402,7 +419,7 @@ If startup still fails, inspect:
 
 ### Output already exists
 
-If the target file already exists, the pipeline skips that source video. To regenerate the final mux, remove the exact final file for the current mode, including its Irodori or voice-design namespace where present. Cached speech and retimed tracks are still reused; removing the final video alone does not regenerate speech.
+An existing target is skipped only when its completion manifest matches; see [Resume and Outputs](#resume-and-outputs). To regenerate the final mux while preserving the old result, move the exact final video and its `.complete.json` manifest outside `VIDEO_FOLDER`, then rerun. Validated speech and retimed tracks are still reused. A missing or mismatched manifest triggers validation and rebuilding as needed.
 
 ## Development
 

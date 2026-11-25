@@ -22,7 +22,7 @@ from xlanguage_dubbing.config import (
     NEMO_SPEECH_MODEL,
 )
 from xlanguage_dubbing.core.models import DiarizationSegment, Segment
-from xlanguage_dubbing.lang_utils import normalize_lang_code
+from xlanguage_dubbing.lang_utils import normalize_lang_code, speech_lang_code
 from xlanguage_dubbing.utils import (
     PipelineError,
     atomic_write_json,
@@ -59,7 +59,7 @@ def _run_transcription(wav_path: Path, *, diarize: bool, language: str) -> dict[
     if diarize:
         command.extend(["--diarize", "--diar-model", NEMO_SPEECH_DIAR_MODEL])
     if language and language != "auto":
-        command.extend(["--language", language])
+        command.extend(["--language", speech_lang_code(language)])
     # The CLI owns its models; exiting releases ASR and diarization memory.
     result = run_cmd(command)
     try:

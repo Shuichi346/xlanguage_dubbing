@@ -52,7 +52,7 @@
 - Demucs の `--two-stems vocals` を使って、任意でボーカルと背景音を分離できます。
 - Demucs 分離が無効の場合は、元の音声をそのまま使うフォールバックパスを保持します。
 - マージルール・spaCy 文分割・文単位マージによって ASR セグメントを正規化します。
-- 英日ペアには CAT-Translate を、その他の言語ペアには TranslateGemma を選択します。
+- 全言語ペアを PLaMo 3 Translate 8B Q4_K_M で翻訳し、公式対応53言語以外は受け付けません。
 - OmniVoice・VoxCPM2・Irodori-TTS-Server の 3 つの TTS エンジンを提供します。
 - クローン音声合成のための話者ごと・セグメントごとの参照音声を構築します。
 - 生成された TTS の長さに合わせてソース動画のタイミングを再調整します。
@@ -79,9 +79,9 @@
 - FFmpeg と ffprobe でメディア解析・トランスコード・タイミング再調整・合成を行います。
 - Demucs でボーカル／背景の分離をオプションで行います。
 - spaCy で文を意識したセグメント分割を行います。
-- デフォルトの ASR パスには `mlx-audio` / MLX 経由の VibeVoice-ASR を使用します。
+- デフォルトの ASR パスには、公式 VibeVoice-ASR Q8 GGUF と Q8 音声プロジェクターを `llama-server` 経由で使用します。
 - オプションの whisper ASR パスには whisper.cpp・Silero VAD・pyannote.audio を使用します。
-- ローカル GGUF 翻訳モデルには `llama-cpp-python` と Hugging Face Hub を使用します。
+- ローカルGGUF翻訳には公式の `llama.cpp`／`llama-server` とHugging Face Hubを使用します。
 - 音声クローン TTS には OmniVoice・VoxCPM2・Irodori-TTS-Server を使用します。
 - 音声／モデルサポートには PyTorch・torchaudio・TorchCodec・soundfile・pydub を使用します。
 
@@ -92,13 +92,16 @@
 - Homebrew パッケージ：
 
 ```bash
-brew install ffmpeg cmake uv
+brew install ffmpeg cmake uv llama.cpp
 ```
 
+- PLaMoの `plamo3` トークナイザーに対応する新しい `llama-server`。既存のHomebrew版が古い場合は `brew upgrade llama.cpp` で更新してください。
 - 初回の依存関係およびモデルダウンロードのためのインターネット接続。
 - pyannote ダイアライゼーションを使う whisper モードおよびゲート付きまたは認証が必要なモデルのダウンロードには、`HF_AUTH_TOKEN` に Hugging Face トークンが必要です。
 
 Linux・Windows・CUDA ワークフローはこのリポジトリ構成ではサポートされていません。
+
+依存関係の解決対象は macOS arm64 です。PyTorch `2.15.0`・TorchAudio `2.11.1`・TorchCodec `0.17.0`・Demucs `4.1.0` を固定し、FFmpeg `9.0.2` でネイティブデコードと合成メディアの検証を通過しています。FFmpeg 9 を維持してください。MLX Audio・MLX・MLX LM は不要になりました。Irodori は後述する独立した固定環境で動作します。
 
 ## インストール
 
@@ -151,7 +154,9 @@ CLI は `VIDEO_FOLDER` を再帰的にスキャンします。対応動画が見
 uv run xlanguage-dubbing --generate-script
 ```
 
-`TTS_ENGINE=irodori` の場合、生成された `start_servers.sh` は設定されたホストとポートで Irodori-TTS-Server を起動します。OmniVoice と VoxCPM2 の場合は、外部サーバーが不要である旨が表示されます。
+`TTS_ENGINE=irodori` の場合、生成された `start_servers.sh` は設定されたホストとポートで Irodori-TTS-Server を起動します。OmniVoiceとVoxCPM2はプロセス内で動作します。翻訳用のローカル `llama-server` はパイプラインが自動で起動・停止するため、手動起動は不要です。
+
+Irodori のデフォルトの待受先は `127.0.0.1` です。パイプラインや生成スクリプトからループバック以外で起動する場合は `IRODORI_TTS_API_KEY` が必須で、API リクエストにも同じキーを送信します。Irodori 用スクリプトの権限は所有者限定（`0700`）で、キーを設定した場合はその値も含まれます。設定変更後は `uv run xlanguage-dubbing --generate-script` で再生成してください。既存のスクリプトや外部で管理するサーバーは自動更新しません。
 
 ## 設定
 
@@ -165,8 +170,8 @@ uv run xlanguage-dubbing --generate-script
 | `TEMP_ROOT` | チェックポイントと中間出力のルート。 |
 | `OUTPUT_SUFFIX` | 生成された動画に付加されるサフィックス。 |
 | `KEEP_TEMP` | 合成後に各動画の一時作業ディレクトリを保持するか削除するか。 |
-| `INPUT_LANG` | ソース言語の ISO コード、または `auto`。 |
-| `OUTPUT_LANG` | ターゲット吹き替え言語の ISO コード。 |
+| `INPUT_LANG` | PLaMo対応の入力言語コード、または `auto`。 |
+| `OUTPUT_LANG` | PLaMo対応の出力言語コード。TTS側の言語制限も適用されます。 |
 | `TTS_SAMPLE_RATE` | プロジェクト標準の TTS／出力音声サンプルレート。 |
 | `TTS_CHANNELS` | プロジェクト標準の TTS／出力音声チャンネル数。 |
 | `ORIGINAL_VOLUME` | 音声分離が無効のときの元の生音声ボリューム。 |
@@ -187,7 +192,9 @@ uv run xlanguage-dubbing --generate-script
 | `WHISPER_LANG` | whisper.cpp の言語引数；通常は `INPUT_LANG` または `auto` に従います。 |
 | `VAD_MODEL` | whisper.cpp VAD モデル名。 |
 | `WHISPER_CPP_DIR` | ローカルの whisper.cpp チェックアウトパス。 |
-| `VIBEVOICE_MODEL` | MLX VibeVoice-ASR モデル。 |
+| `VIBEVOICE_SERVER_BIN` | 対応版 `llama-server` のパス。空欄は一時的なプロジェクト内ビルドを優先。`llama-server` と指定すると PATH／Homebrew 版を選択。 |
+| `VIBEVOICE_N_CTX` | コンテキスト長。既定 `65536`。生成上限と入力トークンを収める必要があります。 |
+| `VIBEVOICE_N_GPU_LAYERS` | GPU 層数。既定 `-1` は Metal。`0` は音声プロジェクターを含む CPU 実行。 |
 | `VIBEVOICE_MAX_TOKENS` | VibeVoice の最大生成トークン数。 |
 | `VIBEVOICE_CONTEXT` | VibeVoice-ASR のオプションコンテキストプロンプト。 |
 | `NEMO_SPEECH_BIN` | インストール済みの NeMo-Speech.cpp 実行ファイル。デフォルトは `nemo-speech`。`~/.local/bin` も探索します。 |
@@ -206,8 +213,12 @@ uv run xlanguage-dubbing --generate-script
 | `SPACY_MODEL` | 文分割に使用する spaCy モデル。 |
 | `SPACY_CHUNK_MAX_SEC`・`SPACY_CHUNK_MAX_CHARS`・`SPACY_CHUNK_GAP_SEC` | spaCy 入力チャンク構築の上限。 |
 | `SPACY_UNIT_MAX_SENTENCES`・`SPACY_UNIT_MERGE_MAX_CHARS`・`SPACY_UNIT_MERGE_MAX_GAP_SEC` | spaCy 分割後の文単位マージ上限。 |
-| `CAT_TRANSLATE_*` | CAT-Translate の GGUF モデル・コンテキスト・リトライ・繰り返しペナルティ設定。 |
-| `TRANSLATEGEMMA_*` | TranslateGemma の GGUF モデル・コンテキスト・リトライ・繰り返しペナルティ設定。 |
+| `PLAMO_TRANSLATE_SERVER_BIN` | `llama-server` の実行ファイル名またはパス。デフォルトは `llama-server`。`/opt/homebrew/bin/llama-server` も探索します。 |
+| `PLAMO_TRANSLATE_N_GPU_LAYERS` | GPUに割り当てる層数。デフォルトは全層の `-1`。 |
+| `PLAMO_TRANSLATE_N_CTX` | 入出力を合わせたコンテキスト長。デフォルトは `8192`。 |
+| `PLAMO_TRANSLATE_RETRIES` | 翻訳の試行回数。デフォルトは `3`。 |
+| `PLAMO_TRANSLATE_RETRY_BACKOFF_SEC` | リトライ待機時間の基準秒数。デフォルトは `1.5`。 |
+| `PLAMO_TRANSLATE_REPEAT_PENALTY` | 繰り返しペナルティ。デフォルトは `1.0`。 |
 | `OUTPUT_REPEAT_THRESHOLD`・`INPUT_REPEAT_THRESHOLD` | 翻訳の不具合を検出するための繰り返し閾値。 |
 
 ### TTS エンジン
@@ -218,10 +229,12 @@ uv run xlanguage-dubbing --generate-script
 | `OMNIVOICE_*` | OmniVoice のモデル・dtype・サンプリング・長さ・参照・リトライ設定。 |
 | `VOXCPM2_*` | VoxCPM2 のモデル・コントローラブルクローニング・長さ・参照・リトライ設定。 |
 | `IRODORI_TTS_BASE_URL` | Irodori-TTS-Server のベース URL。 |
+| `IRODORI_TTS_SERVER_HOST` | サーバーの待受先。デフォルトは `127.0.0.1`。ループバック以外での起動には API キーが必須です。 |
+| `IRODORI_TTS_SERVER_PORT` | サーバーのポート。デフォルトは `8088`。 |
 | `IRODORI_TTS_DIR` | ローカルのサーバーフォーク。デフォルトは `./Irodori-TTS-Server-nonWatermark`。 |
 | `IRODORI_TTS_AUTO_START` | サーバーが正常稼働していない場合に Irodori-TTS-Server を自動起動します。 |
 | `IRODORI_TTS_START_COMMAND` | オプションのカスタムサーバー起動コマンド。 |
-| `IRODORI_TTS_API_KEY` | Irodori-TTS-Server に送信するオプションの API キー。 |
+| `IRODORI_TTS_API_KEY` | Irodori-TTS-Server に送信する API キー。パイプラインや生成スクリプトからループバック以外で起動する場合は必須です。 |
 | `IRODORI_HF_CHECKPOINT` | Irodori-TTS-Server が使う Hugging Face チェックポイント。デフォルトは `Aratako/Irodori-TTS-v4.1-Small-MF`。 |
 | `IRODORI_CODEC_REPO` | Irodori 参照潜在の生成とサーバーのデコードに使う DACVAE。デフォルトは `Aratako/Semantic-DACVAE-Japanese-32dim`。 |
 | `IRODORI_MODEL_DEVICE` | Irodori モデルの実行デバイス。デフォルトは `cpu`。Pytorchのバグにより`mps`はメモリー増加で処理負荷注意。 |
@@ -239,9 +252,21 @@ uv run xlanguage-dubbing --generate-script
 
 | エンジン | 使用場面 | 備考 |
 |---|---|---|
-| `vibevoice` | 話者情報を統合した多言語またはコードスイッチング ASR を使いたい場合。 | デフォルトモード。Apple Silicon 上で MLX モデルを使用し、pyannote 話者ダイアライゼーションパスをスキップします。 |
+| `vibevoice` | 話者情報を統合した多言語またはコードスイッチング ASR を使いたい場合。 | デフォルトモード。Apple Silicon 上で公式 Q8 GGUF と Q8 プロジェクターを使用し、pyannote をスキップします。 |
 | `whisper` | VAD 付きの whisper.cpp ASR を使いたい場合。 | `scripts/setup_whisper.sh` が必要。話者 ID は pyannote.audio で割り当てられ、`HF_AUTH_TOKEN` が必要です。 |
 | `nemo-speech` | NeMo の文字起こしと話者分離をまとめて使いたい場合。 | インストール済み CLI と指定の Nemotron ASR／話者分離モデルを使用。最大8人で、pyannote は使用しません。 |
+
+VibeVoice は公式の [`VibeVoice-ASR-Q8_0.gguf` と `mmproj-VibeVoice-ASR-Q8_0.gguf`](https://huggingface.co/ggml-org/VibeVoice-ASR-GGUF/tree/main)（合計約8.94 GB）を、プロジェクト直下の `models/VibeVoice-ASR-GGUF/` に自動取得します。音声プロジェクターも必須です。両方を同じ固定リビジョンで使用します。旧 `VIBEVOICE_MODEL` 環境設定と MLX 専用のチャンク／メモリ設定は廃止しました。旧 MLX の作業フォルダーは保存され、新しい設定では再利用しません。
+
+現在インストールされている Homebrew の `llama.cpp` 1.0.0 は [VibeVoice 対応](https://github.com/ggml-org/llama.cpp/pull/32329)より前の版です。Homebrew が対応するまで、次の一時的な専用ビルドを使用します。
+
+```bash
+bash scripts/setup_vibevoice.sh
+```
+
+公式コミット `fc504f91d8cfdfcd9b0fedcf14600fd2b0e63420` を `models/llama.cpp-vibevoice/` に固定し、Homebrew や PLaMo の実行環境は変更しません。`VIBEVOICE_SERVER_BIN` が空欄の場合はこのビルドを優先します。将来の Homebrew 版で Q8 の文字起こしと参照音声処理が実際に通ることを確認したら、`.env` に `VIBEVOICE_SERVER_BIN=llama-server` を指定して切り替えます。AI エージェント向けの移行条件は `AGENTS.md` に記載しています。
+
+音声全体と実際の長さを `/v1/chat/completions` に渡します。24 kHz への変換と音声エンコーダーのチャンク処理はネイティブ側で行い、話者 ID を途中でリセットしません。時刻・話者 ID を検証し、トークン上限などで途切れた結果は完了扱いにしません。認証付きローカル専用サーバーは、本編 ASR 後・参照音声処理後・失敗時に終了し、翻訳や TTS の前にメモリを解放します。
 
 NeMo を使う場合は `.env` の `ASR_ENGINE=nemo-speech` を指定します。`nemo-speech transcribe <audio.wav> --diarize --diar-model <model> --model <model> --device metal --json` を実行し、単語ごとの時刻と話者番号を吹き替え用セグメントへ変換します。参照音声の文字起こしも NeMo を使用し、その際は話者分離を省略します。`INPUT_LANG=auto` では言語引数を渡さず、CLI が単一の言語を返した場合はそれを使用し、それ以外はテキストから言語を判定します。
 
@@ -297,56 +322,48 @@ AGE_GENDER_MODEL_DIR=./models/age-gender
 
 VoxCPM2は声の説明文、Irodoriは初回だけCaptionを使用します。OmniVoiceは男女・青年／中年・普通の声高を属性から選択します。翻訳先は日本語・英語に限定され、Irodori v4.1 Small MFは日本語のみ対応します。ご指定の天気・駅前・青い屋根の文章を翻訳先言語で読み上げ、その生成音声またはIrodori参照潜在を以後のクローンに使います。モデルの重みを追加学習する方式ではありません。
 
-生成声と途中結果は、音声モードごとの `voice_design/<engine>_<language>_<settings>/` 以下に保存します。出力動画にも `_voice_design_...` が付くため、従来方式の完成動画があっても実行できます。有効な生成声は再開時に再利用されます。推定モデル追加前に作った男性の代替音声も維持するので、声を作り直す場合は `VOICE_DESIGN_SEED` を変更してください。破損した参照音声だけを再生成し、参照音声の指紋でTTS・リタイム結果を分けます。Irodoriでは短命のコーデック処理の前に、このパイプライン自身が起動したサーバーだけを停止します。外部で管理するサーバーは停止しません。
+生成声と途中結果は、翻訳設定別ディレクトリの `input_<20桁ハッシュ>/voice_design/<engine>_<language>_<settings>/` 以下に保存します。出力動画にも `_voice_design_...` が付くため、従来方式の完成動画があっても実行できます。有効な生成声は再開時に再利用されます。推定モデル追加前に作った男性の代替音声も維持するので、声を作り直す場合は `VOICE_DESIGN_SEED` を変更してください。破損した参照音声だけを再生成し、参照音声の指紋でTTS・リタイム結果を分けます。Irodoriでは短命のコーデック処理の前に、このパイプライン自身が起動したサーバーだけを停止します。外部で管理するサーバーは停止しません。
 
 ### 翻訳
 
-| 言語ペア | エンジン |
-|---|---|
-| 英語から日本語 | CAT-Translate |
-| 日本語から英語 | CAT-Translate |
-| その他のペア | TranslateGemma |
+言語ペアに関わらず、[公式GGUF](https://huggingface.co/pfnet/plamo-3-translate-8b-GGUF) の `plamo-3-translate-8b-Q4_K_M.gguf` を使います。リポジトリとファイル名は固定です。初回使用時に約5.28GBのモデルをプロジェクト直下の `models/plamo-3-translate-8b-GGUF/` に取得します。必要になった時点で専用の `llama-server` をlocalhostの空きポートに自動起動し、Python標準ライブラリで `/v1/completions` にPFML3プロンプトを送信します。このプロセスはTTS前と処理失敗時に停止します。
 
-両翻訳エンジンはローカル GGUF 推論で動作します。パイプラインは TTS の前に翻訳モデルを解放してメモリを確保します。
+対応する言語コードは以下の53種類です。入力・出力ともにこの一覧に限定します。`INPUT_LANG=auto` は使用できますが、検出された未対応言語はエラーになります。TTSエンジンとボイスデザインの言語制限は別途適用されます。
+
+```text
+ja en zh-hans zh-hant ko ar az be bg bn ca ceb de es et eu fa fr gu he
+hi hr hu hy id it jv ka kk km lt lv ml mr ms my ne nl pa pl ru si sk sl
+sr sw ta te th tl ur uz vi
+```
+
+中国語は簡体字 `zh-hans` と繁体字 `zh-hant` を区別します。`zh`・`zh-cn` は簡体字、`zh-tw`・`zh-hk`・`zh-mo` は繁体字として扱います。その他の地域付きコードは基本言語コードに正規化します。
 
 ## 再開と出力
 
-最終動画はソース動画と同じ場所に以下の名前で出力されます：
-
-```text
-<ソースファイル名><OUTPUT_SUFFIX>
-```
-
-`OUTPUT_SUFFIX` のデフォルトは `_xlDub.mp4` です。OmniVoice／VoxCPM2 の元音声クローンでは上記の名前を使い、Irodori の元音声クローンとボイスデザインでは、サフィックスの前に設定ごとの識別子を追加します。
+最終動画はソース動画と同じ場所に出力します。`OUTPUT_SUFFIX` のデフォルトは `_xlDub.mp4` です。全モードで翻訳設定の識別子 `plamo3_<出力言語>_<12桁ハッシュ>` と、入力・有効な解析設定・音声生成設定・合成／出力設定から決まる16桁の識別子を付けます。
 
 | モード | 最終ファイル名 |
 |---|---|
-| Irodori 元音声クローン | `<ソースファイル名>_irodori_<設定ハッシュ><OUTPUT_SUFFIX>` |
-| ボイスデザイン | `<ソースファイル名>_voice_design_<エンジン>_<言語>_<設定ハッシュ><OUTPUT_SUFFIX>` |
+| OmniVoice／VoxCPM2 元音声クローン | `<拡張子なしソース名>_<翻訳識別子>_<16桁識別子><OUTPUT_SUFFIX>` |
+| Irodori 元音声クローン | `<拡張子なしソース名>_<翻訳識別子>_<16桁識別子>_irodori_<設定ハッシュ><OUTPUT_SUFFIX>` |
+| ボイスデザイン | `<拡張子なしソース名>_<翻訳識別子>_<16桁識別子>_voice_design_<エンジン>_<言語>_<設定ハッシュ><OUTPUT_SUFFIX>` |
 
-Irodori のモデルやステップ数を変更すると出力名も変わるため、古い動画を残したまま新しい設定で生成できます。
+一時ディレクトリの基点は音声ソースモードによって分離します。
 
-パイプラインは `TEMP_ROOT` 以下にチェックポイントと成果物を保存します：
+- Demucs有効：`temp/<video>`
+- Demucs無効：`temp/<video>_rawaudio`
 
-- `progress.json`
-- `segments_src.json`
-- `segments_translated.json`
-- `subtitles_src.srt`
-- `speaker_refs/`（Irodori の話者別 `.pt` 参照潜在キャッシュを含む）
-- `seg_audio/`
-- `tts_meta.json`
-- `retime/`
+NeMoでは基点の下に `nemo-speech/` を追加します。その下、または他のASRの基点の下に `<翻訳識別子>/input_<20桁ハッシュ>/` を追加し、ボイスデザインではさらに `voice_design/<エンジン>_<言語>_<設定ハッシュ>/` を追加します。入力ハッシュには解決済みのソースパス・内容・ファイル情報と、有効なASR・セグメント化・音声分離設定を含めます。同名の別動画や内容を変更した動画は別の保存先になり、以前の作業ディレクトリと出力は維持します。
 
-一時ディレクトリは音声ソースモードによって分離されます：
+この作業ディレクトリに `progress.json`・`segments_src.json`・`segments_translated.json`・`subtitles_src.srt`・`speaker_refs/` を保存します。NeMoの検証済みCLI出力 `nemo_speech.json` もここに保存します。翻訳は元セグメントに紐付く途中結果を `segments_translated.records/` に1件ずつアトミックに保存し、完了時に集約JSONを書き出します。
 
-- Demucs 分離が有効の場合：`temp/<video>`
-- Demucs 分離が無効の場合：`temp/<video>_rawaudio`
+全TTSエンジンの元音声クローン・ボイスデザインで、`render/<指紋>/` の下に `seg_audio/`・発話別の `tts_records/`・集約した `tts_meta.json` を保存します。指紋には翻訳文・時刻・有効な生成設定と、使用する参照音声／潜在の内容や参照テキストを含めます。Irodoriの設定指紋にはサーバーの `uv.lock` ハッシュも含まれます。リタイム結果はその下の `retime/<パーツとフレーム周期の指紋>/` に分けるため、合計時間が同じでも個々の発話時間が変われば古い結合動画を再利用しません。
 
-NeMo のチェックポイントと参照音声は、選択した音声モードのディレクトリ内の `nemo-speech/` に保存します。他の ASR エンジンの結果を誤って再利用しません。検証済みの CLI 出力は、このディレクトリの `nemo_speech.json` に保存します。
+翻訳識別子はモデル・プロンプト形式・入力言語設定・出力言語・コンテキスト長・繰り返しペナルティから決まります。旧翻訳モデルの途中結果・完成動画は再利用せず、新しい作業ディレクトリでASRから実行します。翻訳設定を変更すると別の保存先と出力名になります。再開時には翻訳キャッシュの元文・時刻・話者・言語も照合します。
 
-Irodori の元音声クローンでは、ASR・翻訳の保存先を維持し、`seg_audio/`・`tts_meta.json`・`retime/` を `render/<指紋>/` 以下に分けます。指紋には有効な生成設定・参照潜在の内容・翻訳済みセグメントを含めます。ボイスデザインでは音声／ASR ディレクトリの下に `voice_design/<エンジン>_<言語>_<設定ハッシュ>/` を追加し、生成声をその `speaker_refs/`、描画結果をその `render/<指紋>/` に保存します。Irodori の設定指紋にはサーバーの `uv.lock` ハッシュも含まれるため、固定した推論フォークを導入すると、生成声・描画キャッシュ・出力名が分かれます。旧モデルの共有 TTS・リタイムキャッシュは残りますが、移行後の Irodori では再利用しません。
+再開時はファイルの存在だけでなく、入力とキャッシュの識別情報を検証します。完成MP4をスキップするには、一致する完了マニフェストが必要です。`example.mp4` の場合は `example.complete.json` です。入力・有効な設定・出力ファイルの署名と、保持されている参照を照合します。`KEEP_TEMP=false` で意図的に一時ファイルを削除した後も、完成動画のスキップに対応します。フォルダースキャンでは生成済み出力を次の吹き替え対象から除外します。
 
-`progress.json` がソース動画のサイズおよび更新日時と一致する場合、コマンドを再実行すると完了済みの作業が再開されます。特定の動画を最初からやり直したい場合は、その動画の一時ディレクトリと既存の最終出力ファイルを削除してください。
+メディアは一時保存先で検証してからアトミックに公開します。必須のTTS音声が未生成・失敗・破損した場合は完成動画を公開せず、成功済みの他の発話を保持して再試行できます。以前の結果を残して最初からやり直すには、該当する作業ディレクトリ・最終動画・完了マニフェストを入力と作業領域の外へ移してから再実行してください。最終動画とマニフェストだけを移す場合は、検証済みの音声・リタイム結果を再利用して最終合成をやり直します。
 
 ## トラブルシューティング
 
@@ -402,7 +419,7 @@ bash scripts/setup_irodori.sh
 
 ### 出力がすでに存在する
 
-ターゲットファイルがすでに存在する場合、パイプラインはそのソース動画をスキップします。最終動画の合成をやり直す場合は、現在のモードに対応する完成ファイルを削除してください。Irodori やボイスデザインでは設定ごとの識別子も含む名前です。完成動画だけを削除しても、生成音声やリタイム済みのキャッシュは再利用されます。
+既存の動画は完了マニフェストが一致する場合だけスキップします（[再開と出力](#再開と出力)参照）。以前の結果を残して最終合成をやり直す場合は、該当する最終動画と `.complete.json` マニフェストを `VIDEO_FOLDER` の外へ移して再実行してください。検証済みの音声とリタイム結果は再利用します。マニフェストがない、または一致しない場合は検証し、必要な処理をやり直します。
 
 ## 開発
 

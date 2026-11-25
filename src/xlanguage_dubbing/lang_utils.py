@@ -2,56 +2,29 @@
 """
 言語検出・言語コード変換ユーティリティ。
 ISO 639-1 コードの正規化、テキストからの言語検出、
-翻訳エンジン選択ロジックを提供する。
+PLaMo 翻訳の対応言語検証を提供する。
 """
 
 from __future__ import annotations
 
-from xlanguage_dubbing.utils import print_step
+from xlanguage_dubbing.utils import PipelineError, print_step
 
-# ISO 639-1 コードと英語名の対応表（TranslateGemma 対応言語）
+# Official PLaMo 3 Translate language codes; Chinese scripts count separately.
 LANG_CODE_TO_NAME: dict[str, str] = {
-    "aa": "Afar", "ab": "Abkhazian", "af": "Afrikaans", "ak": "Akan",
-    "am": "Amharic", "an": "Aragonese", "ar": "Arabic", "as": "Assamese",
-    "az": "Azerbaijani", "ba": "Bashkir", "be": "Belarusian", "bg": "Bulgarian",
-    "bm": "Bambara", "bn": "Bengali", "bo": "Tibetan", "br": "Breton",
-    "bs": "Bosnian", "ca": "Catalan", "ce": "Chechen", "co": "Corsican",
-    "cs": "Czech", "cv": "Chuvash", "cy": "Welsh", "da": "Danish",
-    "de": "German", "dv": "Divehi", "dz": "Dzongkha", "ee": "Ewe",
-    "el": "Greek", "en": "English", "eo": "Esperanto", "es": "Spanish",
-    "et": "Estonian", "eu": "Basque", "fa": "Persian", "ff": "Fulah",
-    "fi": "Finnish", "fo": "Faroese", "fr": "French", "fy": "Western Frisian",
-    "ga": "Irish", "gd": "Scottish Gaelic", "gl": "Galician", "gn": "Guarani",
-    "gu": "Gujarati", "gv": "Manx", "ha": "Hausa", "he": "Hebrew",
-    "hi": "Hindi", "hr": "Croatian", "ht": "Haitian", "hu": "Hungarian",
-    "hy": "Armenian", "ia": "Interlingua", "id": "Indonesian", "ie": "Interlingue",
-    "ig": "Igbo", "ii": "Sichuan Yi", "ik": "Inupiaq", "io": "Ido",
-    "is": "Icelandic", "it": "Italian", "iu": "Inuktitut", "ja": "Japanese",
-    "jv": "Javanese", "ka": "Georgian", "ki": "Kikuyu", "kk": "Kazakh",
-    "kl": "Kalaallisut", "km": "Central Khmer", "kn": "Kannada", "ko": "Korean",
-    "ks": "Kashmiri", "ku": "Kurdish", "kw": "Cornish", "ky": "Kyrgyz",
-    "la": "Latin", "lb": "Luxembourgish", "lg": "Ganda", "ln": "Lingala",
-    "lo": "Lao", "lt": "Lithuanian", "lu": "Luba-Katanga", "lv": "Latvian",
-    "mg": "Malagasy", "mi": "Maori", "mk": "Macedonian", "ml": "Malayalam",
-    "mn": "Mongolian", "mr": "Marathi", "ms": "Malay", "mt": "Maltese",
-    "my": "Burmese", "nb": "Norwegian Bokmal", "nd": "North Ndebele",
-    "ne": "Nepali", "nl": "Dutch", "nn": "Norwegian Nynorsk", "no": "Norwegian",
-    "nr": "South Ndebele", "nv": "Navajo", "ny": "Chichewa", "oc": "Occitan",
-    "om": "Oromo", "or": "Oriya", "os": "Ossetian", "pa": "Punjabi",
-    "pl": "Polish", "ps": "Pashto", "pt": "Portuguese", "qu": "Quechua",
-    "rm": "Romansh", "rn": "Rundi", "ro": "Romanian", "ru": "Russian",
-    "rw": "Kinyarwanda", "sa": "Sanskrit", "sc": "Sardinian", "sd": "Sindhi",
-    "se": "Northern Sami", "sg": "Sango", "si": "Sinhala", "sk": "Slovak",
-    "sl": "Slovenian", "sn": "Shona", "so": "Somali", "sq": "Albanian",
-    "sr": "Serbian", "ss": "Swati", "st": "Southern Sotho", "su": "Sundanese",
-    "sv": "Swedish", "sw": "Swahili", "ta": "Tamil", "te": "Telugu",
-    "tg": "Tajik", "th": "Thai", "ti": "Tigrinya", "tk": "Turkmen",
-    "tl": "Tagalog", "tn": "Tswana", "to": "Tonga", "tr": "Turkish",
-    "ts": "Tsonga", "tt": "Tatar", "ug": "Uyghur", "uk": "Ukrainian",
-    "ur": "Urdu", "uz": "Uzbek", "ve": "Venda", "vi": "Vietnamese",
-    "vo": "Volapuk", "wa": "Walloon", "wo": "Wolof", "xh": "Xhosa",
-    "yi": "Yiddish", "yo": "Yoruba", "za": "Zhuang", "zh": "Chinese",
-    "zu": "Zulu",
+    "ja": "Japanese", "en": "English",
+    "zh-hans": "Chinese (Simplified)", "zh-hant": "Chinese (Traditional)",
+    "ko": "Korean", "ar": "Arabic", "az": "Azerbaijani", "be": "Belarusian",
+    "bg": "Bulgarian", "bn": "Bengali", "ca": "Catalan", "ceb": "Cebuano",
+    "de": "German", "es": "Spanish", "et": "Estonian", "eu": "Basque",
+    "fa": "Persian", "fr": "French", "gu": "Gujarati", "he": "Hebrew",
+    "hi": "Hindi", "hr": "Croatian", "hu": "Hungarian", "hy": "Armenian",
+    "id": "Indonesian", "it": "Italian", "jv": "Javanese", "ka": "Georgian",
+    "kk": "Kazakh", "km": "Khmer", "lt": "Lithuanian", "lv": "Latvian",
+    "ml": "Malayalam", "mr": "Marathi", "ms": "Malay", "my": "Burmese",
+    "ne": "Nepali", "nl": "Dutch", "pa": "Punjabi", "pl": "Polish",
+    "ru": "Russian", "si": "Sinhala", "sk": "Slovak", "sl": "Slovenian",
+    "sr": "Serbian", "sw": "Swahili", "ta": "Tamil", "te": "Telugu",
+    "th": "Thai", "tl": "Tagalog", "ur": "Urdu", "uz": "Uzbek", "vi": "Vietnamese",
 }
 
 
@@ -68,38 +41,47 @@ def detect_language_from_text(text: str) -> str:
         from langdetect import detect
         lang_code = detect(t)
         # langdetect は "zh-cn" のような形式を返す場合がある
-        return lang_code.split("-")[0].lower()
+        return normalize_lang_code(lang_code)
     except Exception:
         return ""
 
 
 def get_lang_name(lang_code: str) -> str:
     """ISO 639-1 コードから英語の言語名を取得する。"""
-    code = (lang_code or "").strip().lower().split("-")[0]
+    code = normalize_lang_code(lang_code)
     return LANG_CODE_TO_NAME.get(code, code.title() if code else "Unknown")
 
 
 def normalize_lang_code(lang_code: str) -> str:
-    """言語コードを正規化する（小文字、ハイフン前の基本コードのみ取得）。"""
-    return (lang_code or "").strip().lower().split("-")[0]
+    """Normalize region aliases while preserving Chinese script distinctions."""
+    code = (lang_code or "").strip().lower().replace("_", "-")
+    if code == "zh" or code.startswith("zh-"):
+        parts = code.split("-")[1:]
+        if "hant" in parts or ("hans" not in parts and any(p in {"tw", "hk", "mo"} for p in parts)):
+            return "zh-hant"
+        return "zh-hans"
+    return code.split("-")[0]
 
 
-def is_ja_en_pair(source_lang: str, target_lang: str) -> bool:
-    """翻訳が日英ペア（CAT-Translate が最適）かどうかを判定する。"""
-    src = normalize_lang_code(source_lang)
-    tgt = normalize_lang_code(target_lang)
-    return (src == "ja" and tgt == "en") or (src == "en" and tgt == "ja")
+def speech_lang_code(lang_code: str) -> str:
+    """Use the base Chinese code expected by speech backends, preserving PFML3 scripts elsewhere."""
+    return normalize_lang_code(lang_code).split("-")[0]
 
 
-def select_translation_engine(source_lang: str, target_lang: str) -> str:
-    """翻訳エンジンを選択する。
+def validate_translation_language(lang_code: str) -> str:
+    """Reject languages outside the official PLaMo 3 Translate support list."""
+    code = normalize_lang_code(lang_code)
+    if code not in LANG_CODE_TO_NAME:
+        raise PipelineError(
+            f"PLaMo 3 Translate 8B 非対応言語: {lang_code!r}。"
+            "対応言語コードは README の翻訳セクションを参照してください。"
+        )
+    return code
 
-    日英/英日ペア → "cat_translate"
-    それ以外 → "translategemma"
-    """
-    if is_ja_en_pair(source_lang, target_lang):
-        return "cat_translate"
-    return "translategemma"
+
+def validate_translation_languages(source_lang: str, target_lang: str) -> tuple[str, str]:
+    """Validate both sides before inference or checkpoint reuse."""
+    return validate_translation_language(source_lang), validate_translation_language(target_lang)
 
 
 def detect_segments_language(segments: list, input_lang: str) -> str:

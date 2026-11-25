@@ -7,6 +7,9 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
+import numpy as np
+import soundfile as sf
+
 from xlanguage_dubbing import cli, config, irodori_tts
 from xlanguage_dubbing.asr import nemo_speech
 from xlanguage_dubbing.core import pipeline
@@ -50,14 +53,15 @@ class VoiceDesignPipelineTests(unittest.TestCase):
                                                 VOICE_DESIGN_SEED=seed),
                         ):
                             path = cli._work_dir_for_video(video)
-                            self.assertIn("nemo-speech/voice_design/", str(path))
+                            self.assertIn("nemo-speech/plamo3_", str(path))
+                            self.assertIn("/voice_design/", str(path))
                             self.assertIn("video_rawaudio" if not separated else "video/", str(path))
                             paths.add(path)
                             outputs.add(voice_design.output_path_for_video(video))
             self.assertEqual(len(paths), 16)
             self.assertEqual(len(outputs), 8)
             with mock.patch.multiple(config, ENABLE_VOICE_DESIGN=False, TTS_ENGINE="omnivoice"):
-                self.assertEqual(voice_design.output_path_for_video(video), root / "video_dub.mp4")
+                self.assertTrue(voice_design.output_path_for_video(video).name.startswith("video_plamo3_"))
 
     def test_irodori_original_outputs_isolate_model_and_steps_from_legacy_output(self):
         video = Path("/tmp/video.mp4")
@@ -138,6 +142,7 @@ class VoiceDesignPipelineTests(unittest.TestCase):
             progress.set_step("asr_done", True)
             progress.set_step("translate_done", True)
             progress.set_artifact("detected_lang", "en")
+            progress.set_artifact("translation_namespace", cli.translation_namespace())
             progress.save()
             legacy_flac = work / "seg_audio" / "seg_00001.flac"
             legacy_flac.parent.mkdir()
@@ -160,8 +165,8 @@ class VoiceDesignPipelineTests(unittest.TestCase):
                 "ENABLE_AUDIO_SEPARATION": False, "get_asr_engine": lambda: "nemo-speech",
                 "ffprobe_duration_sec": mock.Mock(return_value=10),
                 "ffprobe_has_audio": mock.Mock(return_value=True),
-                "extract_wav_for_whisper": lambda _source, target: target.touch(),
-                "force_memory_cleanup": mock.Mock(), "release_all_translation_models": mock.Mock(),
+                "extract_wav_for_whisper": lambda _source, target: sf.write(target, np.zeros(160), 16000),
+                "force_memory_cleanup": mock.Mock(), "release_translation_model": mock.Mock(),
             }.items():
                 stack.enter_context(mock.patch.object(pipeline, name, value))
             stack.enter_context(mock.patch.object(irodori_tts, "ensure_irodori_tts_server"))
@@ -172,7 +177,8 @@ class VoiceDesignPipelineTests(unittest.TestCase):
                 pipeline.process_one_video(video, mock.Mock(), cache)
             generated_stub = generate.call_args.args[1]
             expected = work / "render" / voice_design.irodori_render_fingerprint(segments, cache)[:20]
-            self.assertEqual(generated_stub, expected / "seg_audio" / "seg_00001")
+            self.assertEqual(generated_stub.parent.parent, expected / "seg_audio")
+            self.assertEqual(generated_stub.name, "seg_00001")
             self.assertTrue(legacy_flac.exists())
 
     def test_pipeline_designs_after_translation_release_using_correct_audio(self):
@@ -218,13 +224,13 @@ class VoiceDesignPipelineTests(unittest.TestCase):
                     "ffprobe_duration_sec": mock.Mock(return_value=10),
                     "ffprobe_has_audio": mock.Mock(return_value=True),
                     "separate_voice_and_background": mock.Mock(return_value=(vocals, background)),
-                    "extract_wav_for_whisper": lambda _source, target: target.touch(),
+                    "extract_wav_for_whisper": lambda _source, target: sf.write(target, np.zeros(160), 16000),
                     "force_memory_cleanup": mock.Mock(), "merge_segments": lambda value: value,
                     "chunk_segments_for_spacy": lambda value, **_kwargs: value,
                     "split_segments_by_spacy_sentences": lambda value: value,
                     "merge_sentence_units": lambda value, **_kwargs: value,
                     "translate_segments_resumable": lambda *args, **kwargs: events.append("translate") or segments,
-                    "release_all_translation_models": lambda: events.append("release"),
+                    "release_translation_model": lambda: events.append("release"),
                     "_run_tts_voxcpm2": tts,
                 }
                 for name, value in replacements.items():

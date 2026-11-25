@@ -151,7 +151,10 @@ def run_case(case: MatrixCase) -> CaseResult:
         )
 
     finished_at = timestamp()
-    status = "passed" if completed.returncode == 0 and output_path.exists() else "failed"
+    outputs = sorted(input_dir.glob(f"test_plamo3_*{output_suffix}"))
+    if len(outputs) == 1:
+        output_path = outputs[0]
+    status = "passed" if completed.returncode == 0 and len(outputs) == 1 else "failed"
     return CaseResult(
         case_id=case.case_id,
         asr_engine=case.asr_engine,

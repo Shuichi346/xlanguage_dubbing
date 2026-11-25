@@ -8,6 +8,7 @@ OUTPUT_LANG に合わせた言語で音声を生成する。
 from __future__ import annotations
 
 import gc
+import math
 import os
 import time
 from pathlib import Path
@@ -32,6 +33,7 @@ from xlanguage_dubbing.config import (
     TTS_SAMPLE_RATE,
 )
 from xlanguage_dubbing.core.models import Segment, TtsMeta
+from xlanguage_dubbing.lang_utils import speech_lang_code
 from xlanguage_dubbing.tts.reference import SpeakerReferenceCache
 from xlanguage_dubbing.utils import (
     PipelineError,
@@ -144,7 +146,7 @@ def omnivoice_synthesize(
         "text": text,
         "num_step": OMNIVOICE_NUM_STEP,
         "guidance_scale": OMNIVOICE_GUIDANCE_SCALE,
-        "language": language,
+        "language": speech_lang_code(language),
     }
 
     if instruct is not None:
@@ -407,10 +409,13 @@ def load_tts_meta(path: Path) -> dict[int, TtsMeta]:
     for row in obj:
         if not isinstance(row, dict):
             continue
-        segno = int(row.get("segno", 0) or 0)
+        try:
+            segno = int(row.get("segno", 0) or 0)
+            dur = float(row.get("duration_sec", 0.0) or 0.0)
+        except (TypeError, ValueError, OverflowError):
+            continue
         flac_path = str(row.get("flac_path", "") or "")
-        dur = float(row.get("duration_sec", 0.0) or 0.0)
-        if segno <= 0 or not flac_path or dur <= 0:
+        if segno <= 0 or not flac_path or not math.isfinite(dur) or dur <= 0:
             continue
         out[segno] = TtsMeta(segno=segno, flac_path=flac_path, duration_sec=dur)
     return out

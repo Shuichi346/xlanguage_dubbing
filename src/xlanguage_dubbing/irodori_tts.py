@@ -42,6 +42,7 @@ from xlanguage_dubbing.config import (
     irodori_sampling_options,
 )
 from xlanguage_dubbing.core.models import Segment, TtsMeta
+from xlanguage_dubbing.servers.health import validate_irodori_bind
 from xlanguage_dubbing.tts.reference import SpeakerReferenceCache
 from xlanguage_dubbing.utils import (
     PipelineError,
@@ -124,8 +125,7 @@ def _server_env() -> dict[str, str]:
     # A server-local checkpoint must not override the pipeline's selected model.
     env["IRODORI_CHECKPOINT"] = ""
     env["IRODORI_DEFAULT_NUM_STEPS"] = str(IRODORI_TTS_NUM_STEPS)
-    if IRODORI_TTS_API_KEY:
-        env.setdefault("IRODORI_API_KEY", IRODORI_TTS_API_KEY)
+    env["IRODORI_API_KEY"] = IRODORI_TTS_API_KEY
     return env
 
 
@@ -138,6 +138,7 @@ def _stop_spawned_server() -> None:
             _SERVER_PROCESS.wait(timeout=10)
         except subprocess.TimeoutExpired:
             _SERVER_PROCESS.kill()
+            _SERVER_PROCESS.wait(timeout=10)
     _SERVER_PROCESS = None
     _SERVER_READY = False
 
@@ -188,6 +189,8 @@ def ensure_irodori_tts_server() -> None:
             "  サーバーを起動するか IRODORI_TTS_AUTO_START=true にしてください。"
         )
 
+    validate_irodori_bind(IRODORI_TTS_SERVER_HOST, IRODORI_TTS_API_KEY)
+
     if not IRODORI_TTS_DIR.exists():
         raise PipelineError(
             "Irodori-TTS-Server のディレクトリが見つかりません。\n"
@@ -196,6 +199,11 @@ def ensure_irodori_tts_server() -> None:
         )
 
     cmd = _select_start_command()
+    for index, argument in enumerate(cmd):
+        if argument == "--host" and index + 1 < len(cmd):
+            validate_irodori_bind(cmd[index + 1], IRODORI_TTS_API_KEY)
+        elif argument.startswith("--host="):
+            validate_irodori_bind(argument.partition("=")[2], IRODORI_TTS_API_KEY)
     print_step(
         "  Irodori-TTS-Server 起動中: "
         f"{' '.join(cmd)} ({IRODORI_TTS_DIR})"

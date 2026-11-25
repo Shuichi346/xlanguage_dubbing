@@ -5,6 +5,9 @@ FFmpeg関連ユーティリティ。
 
 from __future__ import annotations
 
+import json
+import math
+from fractions import Fraction
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -19,9 +22,11 @@ from xlanguage_dubbing.config import (
 )
 from xlanguage_dubbing.utils import (
     PipelineError,
+    atomic_write_json,
     atomic_write_text,
     ensure_dir,
     ffmpeg_concat_quote,
+    load_json_if_exists,
     run_cmd,
     which_or_raise,
 )
@@ -64,6 +69,94 @@ def ffprobe_has_audio(media_path: Path) -> bool:
     proc = run_cmd(cmd, check=False)
     return bool((proc.stdout or "").strip())
 
+
+
+def ffprobe_video_frame_rate(media_path: Path) -> float:
+    """Return a finite positive output cadence from the first video stream."""
+    result = run_cmd([
+        "ffprobe", "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=avg_frame_rate,r_frame_rate", "-of", "json", str(media_path),
+    ])
+    streams = json.loads(result.stdout).get("streams", [])
+    for key in ("avg_frame_rate", "r_frame_rate"):
+        try:
+            rate = float(Fraction(streams[0][key]))
+            if math.isfinite(rate) and rate > 0:
+                return rate
+        except (IndexError, KeyError, ValueError, ZeroDivisionError):
+            continue
+    raise PipelineError(f"動画フレームレートを取得できません: {media_path}")
+
+
+def validate_audio_file(
+    path: Path, *, expected_samples: int | None = None,
+    sample_rate: int = TTS_SAMPLE_RATE, channels: int = TTS_CHANNELS,
+) -> bool:
+    """Decode audio with bounded memory before trusting a render/cache file."""
+    try:
+        with sf.SoundFile(path) as source:
+            if source.samplerate != sample_rate or source.channels != channels or source.frames <= 0:
+                return False
+            if expected_samples is not None and source.frames != expected_samples:
+                return False
+            decoded = sum(len(block) for block in source.blocks(blocksize=65536))
+            return decoded == source.frames
+    except (RuntimeError, OSError, ValueError):
+        return False
+
+
+def validate_media_file(
+    path: Path, *, require_video: bool = False, require_audio: bool = False,
+    expected_duration: float | None = None, duration_tolerance: float = 0.1,
+) -> bool:
+    """Check required streams, duration and complete decoding before publication."""
+    try:
+        if not path.is_file() or path.stat().st_size <= 0:
+            return False
+        result = run_cmd([
+            "ffprobe", "-v", "error", "-show_entries", "format=duration:stream=codec_type",
+            "-of", "json", str(path),
+        ])
+        info = json.loads(result.stdout)
+        kinds = {stream.get("codec_type") for stream in info.get("streams", [])}
+        if (require_video and "video" not in kinds) or (require_audio and "audio" not in kinds):
+            return False
+        duration = float(info["format"]["duration"])
+        if not math.isfinite(duration) or duration <= 0:
+            return False
+        if expected_duration is not None and abs(duration - expected_duration) > duration_tolerance:
+            return False
+        run_cmd(["ffmpeg", "-v", "error", "-xerror", "-i", str(path), "-f", "null", "-"])
+        return True
+    except (PipelineError, OSError, ValueError, KeyError, TypeError):
+        return False
+
+
+def _run_atomic_media(
+    command: list[str], output: Path, *, video: bool = False, audio: bool = False,
+    duration: float | None = None, tolerance: float = 0.1,
+) -> None:
+    """Publish a media result only after FFmpeg and full decoding succeed."""
+    ensure_dir(output.parent)
+    with TemporaryDirectory(prefix=".media-", dir=output.parent) as directory:
+        staged = Path(directory) / output.name
+        run_cmd([*command[:-1], str(staged)])
+        if not validate_media_file(
+            staged, require_video=video, require_audio=audio,
+            expected_duration=duration, duration_tolerance=tolerance,
+        ):
+            raise PipelineError(f"生成メディアの検証に失敗しました: {output}")
+        staged.replace(output)
+
+
+def _run_atomic_audio(command: list[str], output: Path, samples: int) -> None:
+    ensure_dir(output.parent)
+    with TemporaryDirectory(prefix=".audio-", dir=output.parent) as directory:
+        staged = Path(directory) / output.name
+        run_cmd([*command[:-1], str(staged)])
+        if not validate_audio_file(staged, expected_samples=samples):
+            raise PipelineError(f"生成音声のサンプル数/デコード検証に失敗しました: {output}")
+        staged.replace(output)
 
 def extract_audio_segment(
     video_in: Path,
@@ -178,104 +271,87 @@ def _safe_trim_range(start: float, end: float) -> tuple[float, float]:
 
 
 def encode_video_chunk_ts(
-    video_in: Path,
-    out_ts: Path,
-    *,
-    start: float,
-    end: float,
-    speed: float,
+    video_in: Path, out_ts: Path, *, start: float, end: float, speed: float,
+    target_frames: int | None = None, frame_rate: float | None = None,
 ) -> None:
-    """動画チャンクをTSにエンコードする。"""
+    """Render an exact frame budget; callers share cumulative frame boundaries."""
     which_or_raise("ffmpeg")
-    ensure_dir(out_ts.parent)
-
-    s, e = _safe_trim_range(start, end)
+    rate = frame_rate if frame_rate is not None else ffprobe_video_frame_rate(video_in)
+    if not math.isfinite(rate) or rate <= 0:
+        raise PipelineError("動画フレームレートは正の有限値が必要です。")
+    duration = max(0.0, float(end) - float(start))
     spd = max(1e-6, float(speed))
-    duration = e - s
-
+    frames = target_frames if target_frames is not None else max(1, round(duration / spd * rate))
+    if frames < 1:
+        raise PipelineError("映像チャンクは1フレーム以上必要です。")
+    cadence = str(Fraction(rate).limit_denominator(1000000))
+    seek = max(0.0, float(start))
+    if duration < 1.0 / rate:
+        # End-of-media simultaneous turns hold the last available boundary frame.
+        seek = min(seek, max(0.0, ffprobe_duration_sec(video_in) - 1.0 / rate))
+        source_filter = "trim=end_frame=1,setpts=PTS-STARTPTS"
+    else:
+        source_filter = f"trim=end={duration:.9f},setpts=(PTS-STARTPTS)/{spd:.12f}"
     vf = (
-        f"trim=start=0:end={duration:.6f},"
-        f"setpts=(PTS-STARTPTS)/{spd:.8f},"
-        f"scale=-2:{OUTPUT_SIZE}"
+        f"{source_filter},fps=fps={cadence}:start_time=0:round=near,"
+        f"tpad=stop_mode=clone:stop=-1,trim=end_frame={frames},"
+        f"setpts=N/({cadence}*TB),scale=-2:{OUTPUT_SIZE}"
     )
-
     cmd = [
-        "ffmpeg", "-y",
-        "-ss", f"{s:.6f}",
-        "-i", str(video_in),
-        "-an",
-        "-vf", vf,
-        "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
-        "-preset", "veryfast",
-        "-crf", "23",
-        "-g", "60",
-        "-keyint_min", "60",
-        "-sc_threshold", "0",
-        "-mpegts_flags", "+resend_headers",
-        "-f", "mpegts",
-        str(out_ts),
+        "ffmpeg", "-y", "-ss", f"{seek:.9f}", "-i", str(video_in), "-an", "-vf", vf,
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "23",
+        "-r", cadence, "-fps_mode", "cfr", "-frames:v", str(frames), "-bf", "0",
+        "-g", "60", "-keyint_min", "60", "-sc_threshold", "0",
+        "-mpegts_flags", "+resend_headers", "-muxdelay", "0", "-muxpreload", "0",
+        "-f", "mpegts", str(out_ts),
     ]
-    run_cmd(cmd)
+    _run_atomic_media(cmd, out_ts, video=True, duration=frames / rate, tolerance=1.0 / rate + 1e-5)
 
 
 def encode_original_audio_chunk_flac(
-    video_in: Path,
-    out_flac: Path,
-    *,
-    start: float,
-    end: float,
-    speed: float,
+    video_in: Path, out_flac: Path, *, start: float, end: float, speed: float,
+    target_samples: int | None = None,
 ) -> None:
-    """元音声チャンクをFLACにエンコードする。"""
+    """Retime background and normalize it to the shared exact sample budget."""
     which_or_raise("ffmpeg")
-    ensure_dir(out_flac.parent)
-
-    s, e = _safe_trim_range(start, end)
+    duration = max(0.0, float(end) - float(start))
     spd = max(1e-6, float(speed))
-    duration = e - s
-
+    samples = target_samples if target_samples is not None else round(duration / spd * TTS_SAMPLE_RATE)
+    if samples < 1:
+        raise PipelineError("音声チャンクは1サンプル以上必要です。")
+    if duration <= 1e-9:
+        create_silence_flac(out_flac, samples / TTS_SAMPLE_RATE, target_samples=samples)
+        return
     atempo = build_atempo_filter(spd)
     af = (
-        f"atrim=start=0:end={duration:.6f},"
-        f"asetpts=PTS-STARTPTS,"
-        f"{atempo},"
-        f"aresample=async=1:first_pts=0,"
-        # A precise seek can produce a tiny first frame. FFmpeg 9's FLAC
-        # encoder rejects such a frame when it is used as the block size.
+        f"atrim=start=0:end={duration:.9f},asetpts=PTS-STARTPTS,{atempo},"
+        f"aresample={TTS_SAMPLE_RATE}:async=1:first_pts=0,"
+        f"apad=whole_len={samples},atrim=end_sample={samples},asetpts=N/SR/TB,"
+        # A precise seek can produce a tiny first frame rejected by FFmpeg 9 FLAC.
         f"asetnsamples=n={_FLAC_FRAME_SAMPLES}:p=0"
     )
-
     cmd = [
-        "ffmpeg", "-y",
-        "-ss", f"{s:.6f}",
-        "-i", str(video_in),
-        "-vn",
-        "-af", af,
-        "-ac", str(TTS_CHANNELS),
-        "-ar", str(TTS_SAMPLE_RATE),
-        "-c:a", "flac",
-        str(out_flac),
+        "ffmpeg", "-y", "-ss", f"{max(0.0, start):.9f}", "-i", str(video_in), "-vn",
+        "-af", af, "-ac", str(TTS_CHANNELS), "-ar", str(TTS_SAMPLE_RATE),
+        "-c:a", "flac", str(out_flac),
     ]
-    run_cmd(cmd)
+    _run_atomic_audio(cmd, out_flac, samples)
 
 
-def create_silence_flac(out_flac: Path, duration_sec: float) -> None:
-    """無音FLACを作成する。"""
+def create_silence_flac(
+    out_flac: Path, duration_sec: float, *, target_samples: int | None = None,
+) -> None:
+    """Generate silence with the same exact sample-boundary policy as speech."""
     which_or_raise("ffmpeg")
-    ensure_dir(out_flac.parent)
-    dur = max(0.0, float(duration_sec))
+    samples = target_samples if target_samples is not None else round(max(0.0, duration_sec) * TTS_SAMPLE_RATE)
+    if samples < 1:
+        raise PipelineError("無音チャンクは1サンプル以上必要です。")
     cmd = [
-        "ffmpeg", "-y",
-        "-f", "lavfi",
-        "-i", f"anullsrc=r={TTS_SAMPLE_RATE}:cl=stereo",
-        "-t", f"{dur:.6f}",
-        "-ac", str(TTS_CHANNELS),
-        "-ar", str(TTS_SAMPLE_RATE),
-        "-c:a", "flac",
-        str(out_flac),
+        "ffmpeg", "-y", "-f", "lavfi", "-i", f"anullsrc=r={TTS_SAMPLE_RATE}:cl=stereo",
+        "-af", f"atrim=end_sample={samples},asetnsamples=n={_FLAC_FRAME_SAMPLES}:p=0",
+        "-ac", str(TTS_CHANNELS), "-ar", str(TTS_SAMPLE_RATE), "-c:a", "flac", str(out_flac),
     ]
-    run_cmd(cmd)
+    _run_atomic_audio(cmd, out_flac, samples)
 
 
 def concat_ts_files(in_files: list[Path], out_ts: Path, list_file: Path) -> None:
@@ -297,7 +373,7 @@ def concat_ts_files(in_files: list[Path], out_ts: Path, list_file: Path) -> None
         "-c", "copy",
         str(out_ts),
     ]
-    run_cmd(cmd)
+    _run_atomic_media(cmd, out_ts, video=True)
 
 
 def concat_audio_to_flac(
@@ -314,6 +390,8 @@ def concat_audio_to_flac(
     # Every pipeline chunk is normalized before reaching this stage. Separate
     # decoders are required because silence and TTS can have different FLAC
     # STREAMINFO block sizes even when their rate and channels are identical.
+    from xlanguage_dubbing.core.progress import video_signature
+
     expected_frames = 0
     for path in in_files:
         info = sf.info(str(path))
@@ -325,13 +403,18 @@ def concat_audio_to_flac(
 
     # Older versions left a nonempty, truncated FLAC after a failed concat.
     # Its mere existence must never make resume skip the complete track.
-    if out_flac.is_file():
+    identities = [video_signature(path) for path in in_files]
+    manifest_path = out_flac.with_suffix(".concat.json")
+    manifest = load_json_if_exists(manifest_path)
+    if out_flac.is_file() and isinstance(manifest, dict):
         try:
             info = sf.info(str(out_flac))
             if (
                 info.frames == expected_frames
                 and info.samplerate == TTS_SAMPLE_RATE
                 and info.channels == TTS_CHANNELS
+                and manifest.get("inputs") == identities
+                and manifest.get("output") == video_signature(out_flac)
             ):
                 return
         except (RuntimeError, OSError):
@@ -354,6 +437,7 @@ def concat_audio_to_flac(
         if sf.info(str(staged)).frames != expected_frames:
             raise PipelineError("結合音声のサンプル数が一致しません。")
         staged.replace(out_flac)
+    atomic_write_json(manifest_path, {"inputs": identities, "output": video_signature(out_flac)})
 
 
 def remux_ts_to_mp4(video_ts: Path, out_mp4: Path) -> None:
@@ -367,7 +451,7 @@ def remux_ts_to_mp4(video_ts: Path, out_mp4: Path) -> None:
         "-movflags", "+faststart",
         str(out_mp4),
     ]
-    run_cmd(cmd)
+    _run_atomic_media(cmd, out_mp4, video=True)
 
 
 def mux_retimed_video_with_tracks(
@@ -416,4 +500,6 @@ def mux_retimed_video_with_tracks(
             "-movflags", "+faststart",
             str(out_mp4),
         ]
-    run_cmd(cmd)
+    _run_atomic_media(
+        cmd, out_mp4, video=True, audio=True, duration=sf.info(dubbed_flac).duration,
+    )

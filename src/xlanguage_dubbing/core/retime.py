@@ -19,60 +19,31 @@ def build_retime_parts(
     """元動画をギャップ・発話・末尾に分解する。"""
     raw_parts: list[RetimePart] = []
     cursor = 0.0
+    coverage_end = 0.0
     vd = max(0.0, float(video_duration_sec))
+    ordered = sorted(enumerate(segments, start=1), key=lambda item: item[1].start)
 
-    for segno, seg in enumerate(segments, start=1):
-        if cursor >= vd - 1e-6:
-            break
-
-        start = max(0.0, float(seg.start))
-        end = max(start, float(seg.end))
-        start = min(start, vd)
-        end = min(end, vd)
-
-        if end <= cursor + 1e-6:
-            continue
+    for position, (segno, seg) in enumerate(ordered):
+        start = min(vd, max(cursor, float(seg.start), 0.0))
+        coverage_end = max(coverage_end, min(vd, max(start, float(seg.end))))
+        end = coverage_end
+        if position + 1 < len(ordered):
+            # Each source interval belongs to only one turn. A contained or
+            # simultaneous turn still receives its TTS duration on the timeline.
+            next_start = min(vd, max(start, float(ordered[position + 1][1].start)))
+            end = min(end, next_start)
 
         if start > cursor + 1e-6:
-            gap_dur = start - cursor
-            raw_parts.append(
-                RetimePart(
-                    kind="gap",
-                    orig_start=cursor,
-                    orig_end=start,
-                    out_duration=gap_dur,
-                    speed=1.0,
-                )
-            )
+            raw_parts.append(RetimePart("gap", cursor, start, start - cursor, 1.0))
 
-        orig_dur = max(0.001, end - start)
+        orig_dur = end - start
         meta = tts_meta.get(segno)
-
-        if meta and meta.duration_sec > 0.0:
-            out_dur = float(meta.duration_sec)
-            speed = orig_dur / max(0.001, out_dur)
-            raw_parts.append(
-                RetimePart(
-                    kind="speech",
-                    orig_start=start,
-                    orig_end=end,
-                    out_duration=out_dur,
-                    speed=speed,
-                    segno=segno,
-                )
-            )
-        else:
-            raw_parts.append(
-                RetimePart(
-                    kind="speech",
-                    orig_start=start,
-                    orig_end=end,
-                    out_duration=orig_dur,
-                    speed=1.0,
-                    segno=segno,
-                )
-            )
-
+        out_dur = float(meta.duration_sec) if meta and meta.duration_sec > 0 else orig_dur
+        if out_dur > 0:
+            # A zero-width interval is a held boundary frame, with silence in
+            # the background track; it must not replay an overlapping interval.
+            speed = orig_dur / out_dur if orig_dur > 0 else 0.0
+            raw_parts.append(RetimePart("speech", start, end, out_dur, speed, segno))
         cursor = end
 
     if vd > cursor + 1e-6:
